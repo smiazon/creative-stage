@@ -163,11 +163,17 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
   if (body) {
     const stick = document.createElement('div');
     stick.className = 'mStick';
-    for (const sel of ['.spKind', '.spColRow', '.spSpeedRow:not(.spGoboRow)', '.spGoboRow']) {
+    for (const sel of ['.spKind', '.spSpeedRow:not(.spGoboRow)', '.spGoboRow', '.spColRow']) {   // the sliders above the colours
       const el = body.querySelector(`:scope > ${sel}`);
       if (el) stick.appendChild(el);
     }
     body.prepend(stick);
+    // the effects in a column of their own: on its side the panel scrolls each half by itself
+    // (swipe the controls on the left, the effects on the right); upright the whole panel scrolls
+    const fx = document.createElement('div');
+    fx.className = 'mFx';
+    for (const el of [...body.children]) if (el !== stick) fx.appendChild(el);
+    body.appendChild(fx);
   }
 
   // the effects scroll: a lime rail shows where you are, and a pill says there are more below
@@ -180,25 +186,28 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
     more.className = 'mMore';
     more.innerHTML = 'More effects <span aria-hidden="true">⌄</span>';
     panel.append(rail, more);
-    more.addEventListener('click', (e) => { e.stopPropagation(); body.scrollBy({ top: body.clientHeight * 0.7, behavior: 'smooth' }); });
+    const fxCol = body.querySelector('.mFx');
+    const scroller = () => (fxCol && getComputedStyle(fxCol).overflowY !== 'visible' ? fxCol : body);
+    more.addEventListener('click', (e) => { e.stopPropagation(); const sc = scroller(); sc.scrollBy({ top: sc.clientHeight * 0.7, behavior: 'smooth' }); });
     const paintRail = () => {
       const stick = body.querySelector('.mStick');
-      const pr = panel.getBoundingClientRect(), br = body.getBoundingClientRect();
-      const sideways = stick && getComputedStyle(stick).position === 'sticky' && stick.getBoundingClientRect().width < br.width * 0.6;
-      const topY = br.top - pr.top + (stick && !sideways ? stick.offsetHeight : 0) + 6;
+      const sc = scroller(), own = sc !== body;
+      const pr = panel.getBoundingClientRect(), br = sc.getBoundingClientRect();
+      const topY = br.top - pr.top + (stick && !own ? stick.offsetHeight : 0) + 6;
       const h = Math.max(20, br.bottom - pr.top - topY - 10);
       rail.style.top = `${topY}px`;
       rail.style.height = `${h}px`;
-      const max = body.scrollHeight - body.clientHeight;
-      const view = Math.max(0.12, Math.min(1, body.clientHeight / Math.max(1, body.scrollHeight)));
-      const th = h * view, at = max > 0 ? body.scrollTop / max : 0;
+      const max = sc.scrollHeight - sc.clientHeight;
+      const view = Math.max(0.12, Math.min(1, sc.clientHeight / Math.max(1, sc.scrollHeight)));
+      const th = h * view, at = max > 0 ? sc.scrollTop / max : 0;
       rail.firstElementChild.style.height = `${th}px`;
       rail.firstElementChild.style.transform = `translateY(${(h - th) * at}px)`;
       rail.classList.toggle('none', max < 8);
-      more.classList.toggle('gone', max < 8 || body.scrollTop > max - 30);
-      panel.classList.toggle('mEnd', max < 8 || body.scrollTop > max - 30);
+      more.classList.toggle('gone', max < 8 || sc.scrollTop > max - 30);
+      panel.classList.toggle('mEnd', max < 8 || sc.scrollTop > max - 30);
     };
     body.addEventListener('scroll', paintRail, { passive: true });
+    fxCol?.addEventListener('scroll', paintRail, { passive: true });
     window.addEventListener('resize', () => setTimeout(paintRail, 120));
     setInterval(() => { if (panel.classList.contains('open')) paintRail(); }, 400);
   }
