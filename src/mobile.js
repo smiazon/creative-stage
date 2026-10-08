@@ -20,7 +20,7 @@ function onTouch(el, fn) {
   el.addEventListener('click', (e) => { e.stopPropagation(); if (performance.now() - at > 600) fn(e); });   // a keyboard or mouse click still works
 }
 
-export function initMobile({ camera, view, controls, nextAngle, touchMove, menuUI, overlay, closeAll = () => {}, toggleFly, isFlying = () => false }) {
+export function initMobile({ camera, view, controls, nextAngle, touchMove, menuUI, overlay, closeAll = () => {}, toggleFly, isFlying = () => false, keys = {} }) {
   // phones have no mouse to hold: looking round is the drag below
   if (controls) controls.lock = () => {};
   // --- the code -------------------------------------------------------------------------
@@ -83,11 +83,41 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
   // in the same stack as SHOW, so the two can never overlap
   (document.getElementById('fabDock') || document.body).prepend(fly);
   onTouch(fly, () => toggleFly?.());   // works while the other thumb walks
+  // --- up and down: jump on foot; while flying, hold to rise or sink -------------------------
+  // They press the same keys as the keyboard (Space up, C down), held for as long as the finger is.
+  const pair = document.createElement('div');
+  pair.id = 'mUpDown';
+  const ARROW = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+  pair.innerHTML = `<button id="mDown" aria-label="Fly down">${ARROW('M6 9l6 6 6-6')}<small>DOWN</small></button>`
+    + `<button id="mUp" aria-label="Jump">${ARROW('M6 15l6-6 6 6')}<small>JUMP</small></button>`;
+  (document.getElementById('fabDock') || document.body).prepend(pair);
+  const hold = (btn, code) => {
+    let id = null;
+    const up = (e) => { if (e.pointerId !== id) return; id = null; keys[code] = false; btn.classList.remove('held'); };
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      id = e.pointerId;
+      try { btn.setPointerCapture(e.pointerId); } catch (_) { /* already let go */ }
+      keys[code] = true;
+      btn.classList.add('held');
+      // a jump is a tap: on foot the key only needs a moment
+      if (code === 'Space' && !isFlying()) setTimeout(() => { if (id === null) keys.Space = false; }, 120);
+    });
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up);
+    btn.addEventListener('click', (e) => e.stopPropagation());
+  };
+  hold(pair.querySelector('#mUp'), 'Space');
+  hold(pair.querySelector('#mDown'), 'KeyC');
+
   // camera angles and landings change it too: the button always says where you are
   setInterval(() => {
     const on = isFlying();
     fly.classList.toggle('on', on);
     fly.querySelector('b').textContent = on ? 'LAND' : 'FLY';
+    pair.classList.toggle('flying', on);
+    pair.querySelector('#mUp small').textContent = on ? 'UP' : 'JUMP';
+    pair.querySelector('#mUp').setAttribute('aria-label', on ? 'Fly up' : 'Jump');
   }, 150);
 
   const showBtn = document.getElementById('showFab');

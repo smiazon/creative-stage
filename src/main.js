@@ -5812,5 +5812,5 @@ if (RENDER_JOB) {
 
 // --- the phone and tablet showcase ---------------------------------------------------------
 if (MOBILE) {
-  import('./mobile.js').then((m) => m.initMobile({ camera, view: renderer.domElement, controls, nextAngle, touchMove, menuUI, overlay, closeAll: closeAllWindows, toggleFly, isFlying: () => flying }));
+  import('./mobile.js').then((m) => m.initMobile({ camera, view: renderer.domElement, controls, nextAngle, touchMove, menuUI, overlay, closeAll: closeAllWindows, toggleFly, isFlying: () => flying, keys }));
 }

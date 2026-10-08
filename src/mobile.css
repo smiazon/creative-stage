@@ -274,3 +274,19 @@ html.mobile #showPanel .spBody, html.mobile #showPanel .mStick, html.mobile #sho
 html.mobile #showPanel .mStick .spColRow { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
   -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 30px !important; }
 html.mobile #showPanel .mStick .spColRow.atEnd { -webkit-mask-image: none; mask-image: none; }
+
+/* === up and down: a pair just above FLY, in the same stack (they can't overlap) =============== */
+html.mobile #fabDock > #mUpDown { order: -1; display: flex; gap: 10px; }
+#mUpDown button { width: 56px; height: 56px; border-radius: 50%; padding: 6px 0 0; border: 2px solid rgba(216,255,58,0.7); background: rgba(18,19,22,0.8); color: #d8ff3a;
+  display: grid; justify-items: center; align-content: center; gap: 1px; box-shadow: 0 8px 22px rgba(0,0,0,0.55); touch-action: none; -webkit-user-select: none; user-select: none; }
+#mUpDown svg { width: 24px; height: 24px; }
+#mUpDown small { font: 800 8.5px/1 -apple-system, system-ui, sans-serif; letter-spacing: 0.08em; }
+#mUpDown button.held { background: #d8ff3a; color: #141a00; transform: scale(0.94); }
+#mUpDown #mDown { display: none; }
+#mUpDown.flying #mDown { display: grid; }
+@media (orientation: landscape) and (max-height: 560px) {
+  #mUpDown button { width: 48px; height: 48px; }
+  #mUpDown svg { width: 20px; height: 20px; }
+  html.mobile #fabDock { gap: 8px !important; }
+}
+html.mobile #fabDock > * { align-self: flex-end !important; }   /* the stack lines up on the right edge */
