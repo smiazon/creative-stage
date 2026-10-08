@@ -11,6 +11,15 @@ import * as THREE from 'three';
 const CODE = '0000';
 const OK_KEY = 'pm-mobile-ok';
 
+// act the moment a finger touches the button. A phone won't make a "click" from a
+// second finger while the first is still down (walking on the joystick), so buttons
+// that must work mid-walk listen for the touch itself; the click that may follow is ignored.
+function onTouch(el, fn) {
+  let at = 0;
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); at = performance.now(); fn(e); });
+  el.addEventListener('click', (e) => { e.stopPropagation(); if (performance.now() - at > 600) fn(e); });   // a keyboard or mouse click still works
+}
+
 export function initMobile({ camera, view, controls, nextAngle, touchMove, menuUI, overlay, closeAll = () => {}, toggleFly, isFlying = () => false }) {
   // phones have no mouse to hold: looking round is the drag below
   if (controls) controls.lock = () => {};
@@ -32,8 +41,8 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
     + '<div class="mName"><small>Camera angle</small><b></b></div>'
     + '<button class="mNext" aria-label="Next camera angle">›</button>';
   document.body.appendChild(top);
-  top.querySelector('.mPrev').addEventListener('click', (e) => { e.stopPropagation(); nextAngle(-1); });
-  top.querySelector('.mNext').addEventListener('click', (e) => { e.stopPropagation(); nextAngle(1); });
+  onTouch(top.querySelector('.mPrev'), () => nextAngle(-1));
+  onTouch(top.querySelector('.mNext'), () => nextAngle(1));
   const nameEl = top.querySelector('.mName b'), src = document.getElementById('angleName');
   const showName = () => { nameEl.textContent = src?.textContent || 'Tap › to change'; };
   showName();
@@ -73,13 +82,19 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
   fly.innerHTML = '<b>FLY</b>';
   // in the same stack as SHOW, so the two can never overlap
   (document.getElementById('fabDock') || document.body).prepend(fly);
-  fly.addEventListener('click', (e) => { e.stopPropagation(); toggleFly?.(); });
+  onTouch(fly, () => toggleFly?.());   // works while the other thumb walks
   // camera angles and landings change it too: the button always says where you are
   setInterval(() => {
     const on = isFlying();
     fly.classList.toggle('on', on);
     fly.querySelector('b').textContent = on ? 'LAND' : 'FLY';
   }, 150);
+
+  const showBtn = document.getElementById('showFab');
+  let showAt = 0;
+  showBtn?.addEventListener('pointerdown', () => { if (joyId !== null) { showAt = performance.now(); showBtn.click(); } });
+  // the click a phone may still send after that touch: swallowed, or Show would open and shut
+  showBtn?.addEventListener('click', (e) => { if (e.isTrusted && performance.now() - showAt < 600) e.stopImmediatePropagation(); }, true);
 
   // --- drag to look ------------------------------------------------------------------------
   const euler = new THREE.Euler(0, 0, 0, 'YXZ');
