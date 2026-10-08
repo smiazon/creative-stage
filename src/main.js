@@ -3080,14 +3080,33 @@ function updateMovement(dt) {
 }
 
 // --- resize ------------------------------------------------------------------
-window.addEventListener('resize', () => {
+// The view always matches the window. A phone turning round reports its new size
+// late and in steps (resize, orientationchange, the visual viewport, sometimes a
+// second later), and a view sized once, early, stays stretched to the old shape.
+// So: every frame checks the size (cheap) and refits the moment it differs, and a
+// turn also refits a few times while the phone settles.
+let fitW = 0, fitH = 0;
+function viewSize() {
+  const vv = window.visualViewport;
+  const w = Math.round(vv && MOBILE ? vv.width : window.innerWidth);
+  const h = Math.round(vv && MOBILE ? vv.height : window.innerHeight);
+  return [Math.max(1, w), Math.max(1, h)];
+}
+function fitView(force = false) {
   if (exporting) return;   // the export holds 1920x1080 until it is done
-  camera.aspect = window.innerWidth / window.innerHeight;
+  const [w, h] = viewSize();
+  if (!force && w === fitW && h === fitH) return;
+  fitW = w; fitH = h;
+  window.__fitLens?.(w, h);   // the phone's lens: wider when held upright (mobile.js)
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-  rigFX.setViewport(camera, window.innerHeight);   // stale value re-aliases lasers
-});
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  rigFX.setViewport(camera, h);   // stale value re-aliases lasers
+}
+window.addEventListener('resize', () => fitView());
+window.visualViewport?.addEventListener('resize', () => fitView());
+window.addEventListener('orientationchange', () => { for (const ms of [0, 120, 300, 600, 1000]) setTimeout(() => fitView(true), ms); });
 
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 document.addEventListener('visibilitychange', () => {
@@ -3500,6 +3519,7 @@ let minDt = Infinity, calm = 0;
 const _crowdTint = new THREE.Color(), _tintC = new THREE.Color();
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  if (!renderer.xr.isPresenting && !vrView.stereoOn) fitView();   // a turned phone: refit before this frame is drawn
   if (shadowBakes > 0) { renderer.shadowMap.needsUpdate = true; shadowBakes--; }
   // the head owns the camera in VR; PointerLockControls never engages there
   if (vrView.stereoOn) vrPhone.update(camera, vrView.baseYaw);

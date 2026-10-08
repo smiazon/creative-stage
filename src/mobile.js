@@ -311,9 +311,10 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
   }
 
   // upright, a phone sees a narrow slice of the room at the desktop's lens: wider when tall
-  const fitLens = () => { camera.fov = window.innerHeight > window.innerWidth ? 92 : 72; camera.updateProjectionMatrix(); };
+  // main.js calls this whenever it refits the view (a turn included), before drawing
+  const fitLens = (w = window.innerWidth, h = window.innerHeight) => { camera.fov = h > w ? 92 : 72; camera.updateProjectionMatrix(); };
+  window.__fitLens = fitLens;
   fitLens();
-  window.addEventListener('resize', () => setTimeout(fitLens, 80));
 
   // only Arena and Stadium here (Build's venue row)
   document.documentElement.classList.add('mobileReady');

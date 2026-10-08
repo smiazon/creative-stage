@@ -291,3 +291,9 @@ html.mobile #fabDock > #mUpDown { order: -1; display: flex; gap: 10px; }
 }
 html.mobile #fabDock > * { align-self: flex-end !important; }   /* the stack lines up on the right edge */
 html.mobile #fabDock { flex-wrap: nowrap !important; }   /* the desktop wraps it in reverse, which flips "right" to the left */
+
+/* === turning the phone: the view never stretches ============================================
+   The page itself never scrolls or grows past the screen while the phone turns; the 3D view
+   is pinned to it and main.js refits it every frame the size differs. */
+html.mobile, html.mobile body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+html.mobile body > canvas { position: fixed !important; left: 0; top: 0; }
