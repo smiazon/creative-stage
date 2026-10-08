@@ -7,7 +7,7 @@
 html.mobile { --mGap: 10px; --mIcon: 44px; --mPanel: #1c1d21; --mLine: rgba(255,255,255,0.09);
   --mTop: env(safe-area-inset-top); --mBottom: env(safe-area-inset-bottom); --mLeft: env(safe-area-inset-left); --mRight: env(safe-area-inset-right); }
 html.mobile, html.mobile body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-html.mobile canvas { touch-action: none; }
+html.mobile body > canvas { touch-action: none; }   /* only the 3D view: the effect thumbnails are canvases too, and must let a swipe scroll */
 
 /* the desktop's furniture: gone */
 html.mobile :is(#topBar, #videoFab, #buildFab, #fps, #hud, #angleHud, #flyBadge, #softHint, #tipCard, #bgRender, #fsHint, #VRButton, #camFab, #handsFab, #feedsFab, #consoleBtn, #directorBtn, #director, #console, #helpTip) { display: none !important; }
@@ -311,3 +311,10 @@ html.mobile #showPanel .mFx { display: flex; flex-direction: column; gap: 12px; 
     padding: 0 18px 64px 12px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   html.mobile #showPanel .spBody > .mFx::-webkit-scrollbar { display: none; }
 }
+
+/* === a swipe that starts on an effect scrolls the list ===================================
+   The tiles let the browser pan; a tap still picks the effect. */
+html.mobile #showPanel :is(.spPreset, .spFxTile, .spPreset canvas, .spFxTile canvas) { touch-action: pan-y !important; }
+/* === the left column never squashes a row (the kind tabs were collapsing to nothing) ====== */
+html.mobile #showPanel .mStick { grid-auto-rows: max-content !important; }
+html.mobile #showPanel .mStick > * { min-height: min-content; flex-shrink: 0; }
