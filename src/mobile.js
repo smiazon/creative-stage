@@ -206,6 +206,14 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
     map.classList.toggle('on', !!birdPanel && !birdPanel.classList.contains('hidden'));
   }, 150);
 
+  // the colour strip fades on the right while there are more colours to swipe to
+  const strip = document.querySelector('#showPanel .mStick .spColRow');
+  if (strip) {
+    const edge = () => strip.classList.toggle('atEnd', strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 4);
+    strip.addEventListener('scroll', edge, { passive: true });
+    setInterval(edge, 600);
+  }
+
   // --- tap away from a sheet to close it ------------------------------------------------------
   const scrim = document.createElement('div');
   scrim.id = 'mScrim';

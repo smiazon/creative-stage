@@ -266,3 +266,11 @@ html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 13.5px !impor
 #mGate .mgName { margin: 0; font: 300 30px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; color: #fff; }
 #mGate .mgName b { font-weight: 800; background: linear-gradient(90deg, #c8f03a, #ecff80); -webkit-background-clip: text; background-clip: text; color: transparent; }
 #bootLoader h1 .csName { font-weight: 300; color: #fff; margin-right: 0.38em; }
+
+/* === the colour strip scrolls sideways ======================================================
+   A phone combines touch rules down the page: the effects list allowing only up-and-down
+   swipes left the colour strip inside it with no swipe at all. Both let the browser decide. */
+html.mobile #showPanel .spBody, html.mobile #showPanel .mStick, html.mobile #showPanel .mStick .spColRow { touch-action: auto !important; }
+html.mobile #showPanel .mStick .spColRow { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 30px !important; }
+html.mobile #showPanel .mStick .spColRow.atEnd { -webkit-mask-image: none; mask-image: none; }
