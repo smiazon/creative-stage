@@ -1,0 +1,14 @@
+{
+  "name": "PixMob Stage",
+  "short_name": "PixMob",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#050506",
+  "theme_color": "#050506",
+  "icons": [
+    { "src": "assets/app-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/app-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
