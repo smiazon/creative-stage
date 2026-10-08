@@ -1,6 +1,6 @@
 {
-  "name": "PixMob Stage",
-  "short_name": "PixMob",
+  "name": "Creative Stage",
+  "short_name": "Creative Stage",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

@@ -215,7 +215,7 @@ export function initMobile({ camera, view, controls, nextAngle, touchMove, menuU
     const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
     const tip = document.createElement('div');
     tip.id = 'mFullTip';
-    tip.innerHTML = 'For full screen on iPhone: tap <b>Share</b> <span aria-hidden="true">⬆︎</span>, then <b>Add to Home Screen</b>, and open PixMob from there.';
+    tip.innerHTML = 'For full screen on iPhone: tap <b>Share</b> <span aria-hidden="true">⬆︎</span>, then <b>Add to Home Screen</b>, and open Creative Stage from there.';
     document.body.appendChild(tip);
     full.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -271,7 +271,7 @@ function gate(onOk) {
   const g = document.createElement('div');
   g.id = 'mGate';
   g.innerHTML = `<div class="mgBox">
-    <img src="./assets/pixmob-logo.png" alt="PixMob" class="mgLogo">
+    <h1 class="mgName">CREATIVE <b>STAGE</b></h1>
     <p>Enter the code</p>
     <div class="mgDots"><i></i><i></i><i></i><i></i></div>
     <div class="mgPad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map((k) => (k === '' ? '<span></span>' : `<button data-k="${k}">${k}</button>`)).join('')}</div>

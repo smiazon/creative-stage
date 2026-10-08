@@ -261,3 +261,8 @@ html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 13.5px !impor
 /* === the camera buttons hug the view's name, centred ========================================= */
 #mCam { justify-content: center; gap: 4px !important; }
 #mCam .mName { flex: 0 1 auto !important; min-width: 96px; max-width: 170px; padding: 8px 12px !important; }
+
+/* === the phone app's name: CREATIVE STAGE ================================================== */
+#mGate .mgName { margin: 0; font: 300 30px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; color: #fff; }
+#mGate .mgName b { font-weight: 800; background: linear-gradient(90deg, #c8f03a, #ecff80); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#bootLoader h1 .csName { font-weight: 300; color: #fff; margin-right: 0.38em; }
