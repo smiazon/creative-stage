@@ -290,3 +290,4 @@ html.mobile #fabDock > #mUpDown { order: -1; display: flex; gap: 10px; }
   html.mobile #fabDock { gap: 8px !important; }
 }
 html.mobile #fabDock > * { align-self: flex-end !important; }   /* the stack lines up on the right edge */
+html.mobile #fabDock { flex-wrap: nowrap !important; }   /* the desktop wraps it in reverse, which flips "right" to the left */
