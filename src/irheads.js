@@ -348,9 +348,6 @@ const BEAM_FRAG = /* glsl */`
 // the panel's Gobo size slider: every beam scaled on top of its effect's own size
 let GOBO_K = 1;
 export function setGoboScale(k) { GOBO_K = Math.max(0.3, Math.min(3, +k || 1)); }
-// and the panel's Moving heads slider: at most this many heads run any effect (0 = no cap)
-let HEAD_CAP = 0;
-export function setHeadCap(n) { HEAD_CAP = Math.max(0, Math.round(+n || 0)); }
 
 export function initIRHeads({ scene, jumboY, tempo }) {
   // --- the heads -------------------------------------------------------------------------
@@ -420,8 +417,7 @@ export function initIRHeads({ scene, jumboY, tempo }) {
     const th = Math.min(1.2, THETA * (p.size || 1) * GOBO_K), cos = Math.cos(th), tan = Math.tan(th);
     const spin = (M.spin || 0) * c;
     const board = jumboY ? jumboY() : 0;
-    const designed = p.heads || N;
-    const on = activeMask(HEAD_CAP ? Math.min(designed, HEAD_CAP) : p.heads);
+    const on = activeMask(p.heads);
     // a collecting sweep runs from the moment it took over, in the colour of the effect before it
     const own = hs === heads, cc = M.collect && own ? c - live.collectC0 : c;
     const pc = M.collect && own && live.inherit ? { ...p, ...live.inherit } : p;
@@ -745,7 +741,6 @@ export function initIRHeads({ scene, jumboY, tempo }) {
   return {
     group, heads, update, paint, previewRGB,
     get beamsOn() { return beamsOn; },
-    get count() { return N; },   // how many heads hang in this room
     setBeams(on) { beamsOn = !!on; beamMesh.visible = beamsOn && !!live.params; },
     get live() { return !!live.params; },
   };

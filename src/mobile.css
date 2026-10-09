@@ -1,366 +1,320 @@
-/* The phone and tablet showcase (html.mobile): big, obvious, only what a demo on the
-   spot needs. Every control has its own zone, so nothing overlaps and nothing runs off:
-   - top:    left column (Settings, full screen, Focus) · camera bar · right column (map, Build)
-   - bottom: joystick (left) · FX over SHOW (centre, the menus) · up, FLY, down (right, the actions)
-   - cards (Show, Build, Settings) dock to their side, full height; the map and the FX
-     tray float. States on <html>: mSheet (a card is open), mTray, mMap, mFlying,
-     mIdle (left alone: only the show), mFocus (focus mode). */
-html.mobile { --mGap: 10px; --mIcon: 44px; --mPanel: #1c1d21; --mLine: rgba(255,255,255,0.09); --mLime: #d8ff3a;
-  --mTop: env(safe-area-inset-top); --mBottom: env(safe-area-inset-bottom); --mLeft: env(safe-area-inset-left); --mRight: env(safe-area-inset-right);
-  --mFont: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
-html.mobile, html.mobile body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none;
-  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-html.mobile body > canvas { position: fixed !important; left: 0; top: 0; touch-action: none; }   /* only the 3D view: thumbnails must scroll */
+/* The phone and tablet showcase (html.mobile): big, obvious, only what a demo
+   on the spot needs. Nothing overlaps and nothing runs off an edge:
+   - top: Settings and full screen (left), the camera bar, the 2D map and Build (right)
+   - bottom: the joystick (left), FLY over SHOW (right)
+   - Show, Build and Settings float as cards inset from the edges; the room stays in view
+   html.mSheet (mobile.js) is on while a card is open: the controls under it step aside. */
+html.mobile { --mGap: 10px; --mIcon: 44px; --mPanel: #1c1d21; --mLine: rgba(255,255,255,0.09);
+  --mTop: env(safe-area-inset-top); --mBottom: env(safe-area-inset-bottom); --mLeft: env(safe-area-inset-left); --mRight: env(safe-area-inset-right); }
+html.mobile, html.mobile body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html.mobile body > canvas { touch-action: none; }   /* only the 3D view: the effect thumbnails are canvases too, and must let a swipe scroll */
 
 /* the desktop's furniture: gone */
-html.mobile :is(#topBar, #videoFab, #buildFab, #fps, #hud, #angleHud, #flyBadge, #softHint, #tipCard, #bgRender, #fsHint, #VRButton,
-  #camFab, #handsFab, #feedsFab, #consoleBtn, #directorBtn, #director, #console, #helpTip) { display: none !important; }
+html.mobile :is(#topBar, #videoFab, #buildFab, #fps, #hud, #angleHud, #flyBadge, #softHint, #tipCard, #bgRender, #fsHint, #VRButton, #camFab, #handsFab, #feedsFab, #consoleBtn, #directorBtn, #director, #console, #helpTip) { display: none !important; }
 html.mobile #overlay > * { visibility: hidden !important; }
 html.mobile .hdLight { display: none !important; }
-body.menu :is(#mCam, #mJoy, #mHint, #fabDock, #mHot, .mIcon, #mFxTray) { display: none !important; }
+body.menu :is(#mCam, #mJoy, #mHint, #fabDock, #mSet, #mFull, #mMap, #mBuild) { display: none !important; }
 
-/* --- the code ------------------------------------------------------------------------------ */
+/* --- the code ---------------------------------------------------------------------------- */
 #mGate { position: fixed; inset: 0; z-index: 2147482000; display: grid; place-items: center; background: radial-gradient(60% 45% at 50% 40%, rgba(215,255,60,0.05), rgba(0,0,0,0) 70%), #050506;
-  color: #eee; font: 500 16px/1.3 var(--mFont); touch-action: manipulation; }
+  color: #eee; font: 500 16px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; touch-action: manipulation; }
 #mGate .mgBox { display: flex; flex-direction: column; align-items: center; gap: 22px; width: min(320px, 86vw); }
-#mGate .mgName { margin: 0; font: 300 30px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; color: #fff; }
-#mGate .mgName b { font-weight: 800; background: linear-gradient(90deg, #c8f03a, #ecff80); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#mGate .mgLogo { height: 26px; opacity: 0.95; }
 #mGate p { margin: 0; color: #b9bbc3; font-size: 17px; }
 #mGate .mgDots { display: flex; gap: 18px; }
-#mGate .mgDots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--mLime); transition: background 0.12s; }
-#mGate .mgDots i.on { background: var(--mLime); box-shadow: 0 0 12px rgba(216,255,58,0.7); }
+#mGate .mgDots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #d8ff3a; transition: background 0.12s; }
+#mGate .mgDots i.on { background: #d8ff3a; box-shadow: 0 0 12px rgba(216,255,58,0.7); }
 #mGate.no .mgDots { animation: mgShake 0.4s; }
 #mGate.no .mgDots i { border-color: #ff6b6b; background: none; box-shadow: none; }
 #mGate.ok { opacity: 0; transition: opacity 0.25s; }
 @keyframes mgShake { 0%, 100% { transform: none; } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
 #mGate .mgPad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; width: 100%; }
 #mGate .mgPad button { aspect-ratio: 1; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); background: linear-gradient(180deg, #2a2b30, #1a1b1f);
-  color: #fff; font: 400 30px/1 var(--mFont); box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); }
-#mGate .mgPad button:active { background: var(--mLime); color: #111; }
+  color: #fff; font: 400 30px/1 -apple-system, system-ui, sans-serif; box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); }
+#mGate .mgPad button:active { background: #d8ff3a; color: #111; }
 #mGate .mgPad button[data-k="⌫"] { background: none; border: 0; box-shadow: none; font-size: 26px; color: #b9bbc3; }
-#bootLoader h1 .csName { font-weight: 300; color: #fff; margin-right: 0.38em; }
 
-/* --- the top: two columns of small round buttons, the camera bar between ------------------------ */
-.mIcon { position: fixed; z-index: 61; width: var(--mIcon); height: var(--mIcon); padding: 10px; border-radius: 50%; box-sizing: border-box;
+/* --- the top: corner icons and the camera bar between them ------------------------------------ */
+.mIcon, #mSet, #mFull { position: fixed; z-index: 61; width: var(--mIcon); height: var(--mIcon); padding: 10px; border-radius: 50%; box-sizing: border-box;
   border: 1px solid rgba(255,255,255,0.18); background: rgba(18,19,22,0.78); color: #d6d8de; touch-action: manipulation; box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
-.mIcon svg { width: 100%; height: 100%; display: block; }
-.mIcon:active, .mIcon.on { background: var(--mLime); color: #111; border-color: #6f8c06; }
-.mIcon.gone { visibility: hidden; }
+:is(.mIcon, #mSet, #mFull) svg { width: 100%; height: 100%; display: block; }
+:is(.mIcon, #mSet, #mFull):active, .mIcon.on { background: #d8ff3a; color: #111; border-color: #6f8c06; }
 #mSet { top: calc(var(--mGap) + var(--mTop)); left: calc(var(--mGap) + var(--mLeft)); }
 #mFull { top: calc(var(--mGap) * 2 + var(--mIcon) + var(--mTop)); left: calc(var(--mGap) + var(--mLeft)); }
-#mFocus { top: calc(var(--mGap) * 3 + var(--mIcon) * 2 + var(--mTop)); left: calc(var(--mGap) + var(--mLeft)); }
 #mMap { top: calc(var(--mGap) + var(--mTop)); right: calc(var(--mGap) + var(--mRight)); }
 #mBuild { top: calc(var(--mGap) * 2 + var(--mIcon) + var(--mTop)); right: calc(var(--mGap) + var(--mRight)); }
-/* Focus mode's button: a little special — a soft lime breath and a tiny live dot */
-#mFocus { color: var(--mLime); border-color: rgba(216,255,58,0.55); overflow: visible; animation: mFocusBreath 2.8s ease-in-out infinite; }
-#mFocus .mFocusDot { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--mLime);
-  box-shadow: 0 0 8px rgba(216,255,58,0.9); animation: mFocusDot 2.8s ease-in-out infinite; }
-@keyframes mFocusBreath { 0%, 100% { box-shadow: 0 6px 16px rgba(0,0,0,0.45), 0 0 0 0 rgba(216,255,58,0); } 50% { box-shadow: 0 6px 16px rgba(0,0,0,0.45), 0 0 0 5px rgba(216,255,58,0.16); } }
-@keyframes mFocusDot { 0%, 100% { transform: scale(0.7); opacity: 0.7; } 50% { transform: scale(1.15); opacity: 1; } }
-#mCam { position: fixed; z-index: 60; top: calc(var(--mGap) + var(--mTop)); left: 50%; transform: translateX(-50%);
-  width: min(276px, calc(100vw - (var(--mGap) * 4 + var(--mIcon) * 2) - var(--mLeft) - var(--mRight)));
-  display: grid; grid-template-columns: 50px minmax(0, 1fr) 50px; align-items: center; gap: 4px; pointer-events: none; }
-#mCam button { pointer-events: auto; width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(216,255,58,0.65);
-  background: rgba(18,19,22,0.82); color: var(--mLime); font: 300 38px/1 var(--mFont); padding: 0 0 5px;
+#mCam { position: fixed; z-index: 60; top: calc(var(--mGap) + var(--mTop)); left: calc(var(--mGap) * 2 + var(--mIcon) + var(--mLeft)); right: calc(var(--mGap) * 2 + var(--mIcon) + var(--mRight));
+  display: flex; align-items: center; gap: 6px; pointer-events: none; }
+#mCam button { pointer-events: auto; flex: none; width: 54px; height: 54px; border-radius: 50%; border: 1px solid rgba(216,255,58,0.65);
+  background: rgba(18,19,22,0.82); color: #d8ff3a; font: 300 40px/1 -apple-system, system-ui, sans-serif; padding: 0 0 5px;
   box-shadow: 0 8px 22px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.12); touch-action: manipulation; }
-#mCam button:active { background: var(--mLime); color: #111; transform: scale(0.94); }
-#mCam .mName { min-width: 0; height: 50px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 4px 8px;
-  border-radius: 16px; background: rgba(18,19,22,0.72); color: #fff; overflow: hidden; }
-#mCam .mName small { display: block; font: 600 9px/1 var(--mFont); letter-spacing: 0.12em; text-transform: uppercase; color: #9fa1aa; }
-#mCam .mName b { display: block; margin-top: 4px; font: 600 14px/1.1 var(--mFont); white-space: nowrap; overflow: hidden; }
-#mCam .mName b.two { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-top: 2px; line-height: 1.05; }
+#mCam button:active { background: #d8ff3a; color: #111; transform: scale(0.94); }
+#mCam .mName { flex: 1; min-width: 0; text-align: center; padding: 8px 8px; border-radius: 16px; background: rgba(18,19,22,0.7); color: #fff; }
+#mCam .mName small { display: block; font: 600 9.5px/1 -apple-system, system-ui, sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #9fa1aa; }
+#mCam .mName b { display: block; margin-top: 4px; font: 600 14px/1.15 -apple-system, system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* --- the bottom: joystick (left) · menus (centre) · actions (right) ------------------------------ */
-#mJoy { position: fixed; z-index: 55; left: calc(18px + var(--mLeft)); bottom: calc(22px + var(--mBottom)); width: 108px; height: 108px; border-radius: 50%;
+/* --- the bottom: joystick left, FLY over SHOW right (one stack: they can't overlap) ------------ */
+#mJoy { position: fixed; z-index: 55; left: calc(22px + var(--mLeft)); bottom: calc(24px + var(--mBottom)); width: 128px; height: 128px; border-radius: 50%;
   background: radial-gradient(circle, rgba(255,255,255,0.06), rgba(255,255,255,0.12)); border: 2px solid rgba(255,255,255,0.28); touch-action: none; }
-#mJoy i { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%;
+#mJoy i { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
   background: radial-gradient(circle at 40% 35%, #f2ff9a, #c8f03a); box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 16px rgba(216,255,58,0.45); }
 #mJoy.on { border-color: rgba(216,255,58,0.7); }
-#mHint { position: fixed; z-index: 54; left: 0; right: 0; bottom: calc(150px + var(--mBottom)); display: flex; justify-content: space-between; padding: 0 18px; pointer-events: none; transition: opacity 0.6s; }
-#mHint span { padding: 7px 12px; border-radius: 999px; background: rgba(0,0,0,0.6); color: #fff; font: 600 13px/1 var(--mFont); }
+#mHint { position: fixed; z-index: 54; left: 0; right: 0; bottom: calc(165px + var(--mBottom)); display: flex; justify-content: space-between; padding: 0 22px; pointer-events: none; transition: opacity 0.6s; }
+#mHint span { padding: 7px 12px; border-radius: 999px; background: rgba(0,0,0,0.6); color: #fff; font: 600 13px/1 -apple-system, system-ui, sans-serif; }
+#mHint span:first-child { margin-left: 18px; }
 #mHint.gone { opacity: 0; }
-/* the menus: FX over SHOW, centred */
-#mHot { position: fixed; z-index: 58; left: 50%; bottom: calc(22px + var(--mBottom)); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; }
-#mFxBtn { width: 104px; height: 40px; border-radius: 999px; border: 1.5px solid rgba(216,255,58,0.7); background: rgba(18,19,22,0.82); color: var(--mLime);
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0; box-shadow: 0 8px 20px rgba(0,0,0,0.5); touch-action: manipulation; }
-#mFxBtn svg { width: 17px; height: 17px; }
-#mFxBtn b { font: 800 14px/1 var(--mFont); letter-spacing: 0.14em; }
-#mFxBtn.on, #mFxBtn:active { background: var(--mLime); color: #141a00; }
-html.mobile #mHot > #showFab { position: static !important; display: flex !important; align-items: center; justify-content: center; width: 104px !important; min-width: 0 !important; height: 52px !important;
-  padding: 0 !important; margin: 0 !important; border-radius: 999px !important; transform: none !important; order: 0 !important;
-  font: 800 16px/1 var(--mFont) !important; letter-spacing: 0.14em !important;
-  background: linear-gradient(180deg, #e6ff6a, #c2ea2e) !important; color: #141a00 !important; border: 1px solid #6f8c06 !important; text-shadow: none !important; box-shadow: 0 8px 20px rgba(0,0,0,0.5) !important; }
-/* the actions: up, FLY, down — one column at the right edge */
-html.mobile #fabDock { left: auto !important; right: calc(16px + var(--mRight)) !important; bottom: calc(22px + var(--mBottom)) !important; top: auto !important;
-  display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: center !important; gap: 10px !important; transform: none !important; }
-html.mobile #fabDock > :not(#mUp):not(#mFly):not(#mDown) { display: none !important; }
-:is(#mUp, #mDown) { width: 52px; height: 52px; border-radius: 50%; padding: 0; border: 2px solid rgba(216,255,58,0.7); background: rgba(18,19,22,0.8); color: var(--mLime);
-  display: grid; grid-template-rows: auto auto; place-content: center; justify-items: center; row-gap: 1px; box-shadow: 0 8px 22px rgba(0,0,0,0.55);
-  touch-action: none; -webkit-user-select: none; user-select: none; }
-:is(#mUp, #mDown) svg { width: 20px; height: 20px; display: block; }
-:is(#mUp, #mDown) small { display: block; font: 800 8px/1 var(--mFont); letter-spacing: 0.08em; }
-:is(#mUp, #mDown).held { background: var(--mLime); color: #141a00; transform: scale(0.94); }
-#mDown { display: none; }
-html.mFlying #mDown { display: grid; }
-html.mobile #fabDock > #mFly { width: 60px !important; height: 60px !important; min-width: 0 !important; border-radius: 50% !important; padding: 0 !important;
-  display: grid !important; place-items: center; border: 2px solid rgba(216,255,58,0.7) !important; background: rgba(18,19,22,0.8) !important; color: var(--mLime) !important;
-  box-shadow: 0 8px 22px rgba(0,0,0,0.55) !important; touch-action: manipulation; }
-#mFly b { font: 800 13px/1 var(--mFont); letter-spacing: 0.08em; }
-html.mobile #fabDock > #mFly.on { background: var(--mLime) !important; color: #141a00 !important; box-shadow: 0 0 22px rgba(216,255,58,0.6) !important; }
+html.mobile #fabDock { left: auto !important; right: calc(16px + var(--mRight)) !important; bottom: calc(24px + var(--mBottom)) !important; flex-direction: column !important; align-items: flex-end !important; gap: 14px !important; }
+html.mobile #fabDock > #mFly { order: 0; position: static; width: 66px !important; height: 66px !important; min-width: 0 !important; border-radius: 50% !important; padding: 0 !important; display: grid !important; place-items: center; border: 2px solid rgba(216,255,58,0.7) !important;
+  background: rgba(18,19,22,0.8); color: #d8ff3a; box-shadow: 0 8px 22px rgba(0,0,0,0.55); touch-action: manipulation; }
+#mFly b { font: 800 13px/1 -apple-system, system-ui, sans-serif; letter-spacing: 0.08em; }
+#mFly.on { background: #d8ff3a !important; color: #141a00 !important; box-shadow: 0 0 22px rgba(216,255,58,0.6) !important; }
 #mFly:active { transform: scale(0.94); }
+html.mobile #fabDock > #showFab { order: 1 !important; display: flex !important; justify-content: center; min-width: 132px; height: 58px !important; padding: 0 24px !important; border-radius: 999px !important;
+  font: 800 16px/1 -apple-system, system-ui, sans-serif !important; letter-spacing: 0.12em !important;
+  background: linear-gradient(180deg, #e6ff6a, #c2ea2e) !important; color: #141a00 !important; border-color: #6f8c06 !important; text-shadow: none !important; }
+/* a card open: what's under it steps aside */
+html.mSheet :is(#mJoy, #mHint, #fabDock) { display: none !important; }
 
-/* --- the special effects tray: low, centred, the room in view above it ------------------------- */
-#mFxTray { position: fixed; z-index: 70; left: 50%; bottom: calc(140px + var(--mBottom)); transform: translate(-50%, 12px); width: min(360px, calc(100vw - 20px)); box-sizing: border-box;
-  border-radius: 20px; border: 1px solid #000; background: var(--mPanel); box-shadow: inset 0 0 0 1px var(--mLine), 0 18px 44px rgba(0,0,0,0.6); overflow: hidden;
-  opacity: 0; pointer-events: none; transition: opacity 0.22s, transform 0.22s cubic-bezier(0.2, 1, 0.3, 1); }
-html.mTray #mFxTray { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
-.mFxGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; padding: 12px 10px 14px; }
-.mFxTile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: #e9e9ef; touch-action: manipulation; }
-.mFxTile i { position: relative; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid rgba(216,255,58,0.55);
-  background: radial-gradient(circle at 50% 30%, #2c2e33, #18191c); color: var(--mLime); box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 6px 14px rgba(0,0,0,0.45); }
-.mFxTile svg { width: 26px; height: 26px; }
-.mFxTile span { font: 600 11.5px/1.1 var(--mFont); text-align: center; }
-.mFxTile.big i { background: linear-gradient(180deg, #e6ff6a, #c2ea2e); color: #141a00; border-color: #6f8c06; }
-.mFxTile.lit i { background: var(--mLime); color: #141a00; box-shadow: 0 0 18px rgba(216,255,58,0.6); }
-.mFxTile.pop i { animation: mFxPop 0.45s cubic-bezier(0.2, 1, 0.3, 1); }
-.mFxTile.pop i::after { content: ''; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--mLime); animation: mFxRing 0.55s ease-out forwards; pointer-events: none; }
-@keyframes mFxPop { 0% { transform: scale(0.88); } 60% { transform: scale(1.06); } 100% { transform: none; } }
-@keyframes mFxRing { from { transform: scale(1); opacity: 0.9; } to { transform: scale(1.55); opacity: 0; } }
-/* the tray open: the joystick and the actions step aside, the menus stay */
-html.mTray :is(#mJoy, #fabDock, #mHint) { display: none !important; }
-
-/* --- every card's top looks the same: a grab bar, a red close at the left, the title centred ----- */
-.mCardHead, html.mobile #showPanel .spHead, html.mobile #buildPanel .bHead { position: relative; display: flex; align-items: center; justify-content: center; min-height: 48px; box-sizing: border-box;
-  padding: 8px 48px 0 !important; background: var(--mPanel) !important; border-bottom: 1px solid #000 !important; box-shadow: none !important; border-radius: 0 !important;
-  font: 600 16px/1 var(--mFont) !important; color: #fff; cursor: default; letter-spacing: 0 !important; text-transform: none !important; }
-:is(.mCardHead, #showPanel .spHead, #buildPanel .bHead)::before { content: ''; position: absolute; left: 50%; top: 6px; width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: rgba(255,255,255,0.28); }
-.mCardClose, html.mobile #showPanel .spClose, html.mobile #buildPanel .bClose { position: absolute !important; left: 14px; top: 50%; width: 28px !important; height: 28px !important; margin-top: -10px !important;
-  border-radius: 50%; border: 1px solid rgba(0,0,0,0.5) !important; padding: 0 !important; font-size: 0 !important; color: transparent !important;
-  background: radial-gradient(circle at 50% 35%, #ff8a80, #e0362c 60%, #a8160f) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35) !important; }
-html.mobile #buildPanel .bHead .bTitle { font: inherit; }
-html.mobile #buildPanel .bHead .bHint { display: none; }
-
-/* --- the cards: docked to their button's side, full height, a strip of room left to tap away ---- */
+/* --- the cards: Show, Build, Settings — floating, inset, rounded all round -------------------- */
 html.mobile :is(#showPanel, #buildPanel, #settingsPanel) { position: fixed !important; z-index: 80 !important; margin: 0 !important; transform: none !important;
-  top: calc(var(--mGap) + var(--mTop)) !important; bottom: calc(var(--mGap) + var(--mBottom)) !important; height: auto !important; max-height: none !important;
-  width: min(330px, 82vw) !important; max-width: none !important;
+  left: calc(var(--mGap) + var(--mLeft)) !important; right: calc(var(--mGap) + var(--mRight)) !important; top: auto !important; bottom: calc(var(--mGap) + var(--mBottom)) !important;
+  width: auto !important; max-width: none !important; height: min(48vh, 440px) !important; max-height: none !important;
   border-radius: 20px !important; border: 1px solid #000 !important; background: var(--mPanel) !important;
   box-shadow: inset 0 0 0 1px var(--mLine), 0 18px 44px rgba(0,0,0,0.6) !important; overflow: hidden !important; }
-html.mobile :is(#showPanel, #buildPanel) { left: auto !important; right: calc(var(--mGap) + var(--mRight)) !important; }
-html.mobile #settingsPanel { right: auto !important; left: calc(var(--mGap) + var(--mLeft)) !important; display: flex !important; flex-direction: column;
-  overflow-y: auto !important; padding: 0 12px 16px !important; touch-action: pan-y; font-size: 15px; }
+html.mobile #settingsPanel { display: flex !important; flex-direction: column; overflow-y: auto !important; padding: 0 12px 14px !important; touch-action: pan-y; font-size: 15px; }
 html.mobile #settingsPanel.hidden { display: none !important; }
 html.mobile #buildPanel { overflow-y: auto !important; touch-action: pan-y; }
-#mScrim { position: fixed; inset: 0; z-index: 75; display: none; background: rgba(0,0,0,0.12); }
-html.mSheet #mScrim { display: block; }
-/* a card open: everything under it steps aside */
-html.mSheet :is(#mJoy, #mHint, #fabDock, #mHot, #mCam, .mIcon, #mFxTray) { display: none !important; }
-
-/* --- Settings: tidy, finger-sized, only what a phone needs ------------------------------------- */
-html.mobile #settingsPanel .mSetHead { position: sticky; top: 0; z-index: 2; margin: 0 -12px 6px; }
-html.mobile #settingsPanel > button, html.mobile #settingsPanel .setRow { display: flex !important; align-items: center; min-height: 46px; font-size: 15px !important; }
+/* their tops: a grab bar, the title, a big close */
+html.mobile :is(#showPanel .spHead, #buildPanel .bHead) { position: relative; min-height: 48px; padding-top: 8px; font-size: 16px !important; cursor: default; }
+html.mobile :is(#showPanel .spHead, #buildPanel .bHead, #settingsPanel .mSetHead)::before { content: ''; position: absolute; left: 50%; top: 6px; width: 38px; height: 5px; margin-left: -19px; border-radius: 3px; background: rgba(255,255,255,0.28); }
+html.mobile :is(#showPanel .spClose, #buildPanel .bClose) { width: 32px !important; height: 32px !important; }
+html.mobile #settingsPanel .mSetHead { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: center; min-height: 50px; margin: 0 -12px 6px;
+  background: var(--mPanel); border-bottom: 1px solid #000; font: 600 16px/1 -apple-system, system-ui, sans-serif; color: #fff; }
+html.mobile #settingsPanel .mSetClose { position: absolute; left: 14px; top: 50%; width: 30px; height: 30px; margin-top: -12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.5);
+  background: radial-gradient(circle at 50% 35%, #ff8a80, #e0362c 60%, #a8160f); padding: 0; }
+html.mobile #settingsPanel > button, html.mobile #settingsPanel .setRow { min-height: 46px; font-size: 15px !important; }
 html.mobile #settingsPanel :is(#tutorialBtn, #shortcutRow, #advMenuBtn, #saveShowBtn, #openShowBtn, #switchModeBtn, #settingsMenuBtn, #helpBtn, #undoBar) { display: none !important; }
-html.mobile #settingsPanel [data-sec="vidset"] { display: none !important; }
-html.mobile #settingsPanel kbd:not(#hazeVal):not(#fovVal) { display: none !important; }
-html.mobile #settingsPanel .setRow input[type=range] { flex: 1; margin: 0 10px; }
-html.mobile #settingsPanel .setIco { width: 18px; height: 18px; margin-right: 12px; color: var(--mLime); opacity: 0.9; }
+html.mobile #settingsPanel [data-sec="vidset"], html.mobile #settingsPanel .setRow:has(#fovRange) { display: none !important; }
+html.mobile #settingsPanel kbd:not(#hazeVal) { display: none !important; }
+/* tap outside a card to close it */
+#mScrim { position: fixed; inset: 0; z-index: 75; display: none; background: rgba(0,0,0,0.1); }
+html.mSheet #mScrim { display: block; }
 
-/* --- Show: kind, sliders and colours pinned; the effects (big) scroll under them --------------- */
-html.mobile #showPanel .spBody { display: flex !important; flex-direction: column !important; padding: 10px 18px 64px 12px !important; gap: 12px !important;
-  -webkit-overflow-scrolling: touch; touch-action: auto !important; scrollbar-width: none; }
+/* --- Show: the kind, colours and sliders pinned; the effects (big) scroll under them --------- */
+html.mobile #showPanel .spBody { display: flex !important; flex-direction: column !important; padding: 10px 18px 16px 12px !important; gap: 12px !important;
+  -webkit-overflow-scrolling: touch; touch-action: pan-y; scrollbar-width: none; }
 html.mobile #showPanel .spBody::-webkit-scrollbar { display: none; }
-html.mobile #showPanel .spBody > .mStick { order: -1; position: sticky; top: -10px; z-index: 3; display: grid !important; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content;
-  row-gap: 8px; margin: -10px -18px 0 -12px; padding: 8px 14px 10px; background: #1c1d21; border-bottom: 1px solid #000; box-shadow: 0 8px 14px -8px rgba(0,0,0,0.7); touch-action: auto; }
-html.mobile #showPanel .mStick > * { margin: 0 !important; min-height: min-content; }
-html.mobile #showPanel .mStick .aqSeg { display: grid !important; grid-template-columns: 1fr 1fr; }
-html.mobile #showPanel .mStick .aqSeg button { min-height: 32px !important; flex: none !important; }
-html.mobile #showPanel .mStick .aqSeg button b { font-size: 12px !important; }
-html.mobile #showPanel .mStick .spSpeedRow { padding: 0 2px; }
-html.mobile #showPanel .mStick .spSpeedRow[hidden] { display: none !important; }
-html.mobile #showPanel .mStick .aqSlider { display: grid !important; grid-template-columns: minmax(0, 1fr) 46px !important; row-gap: 0; font-size: 12px !important; }
-html.mobile #showPanel .mStick .aqSlider > span { grid-column: 1 / -1; color: #b9bbc3; }
-html.mobile #showPanel .mStick .aqSlider em { font-size: 11px; }
-html.mobile #showPanel .mStick input[type=range] { height: 26px; }
+html.mobile #showPanel .spBody > .mStick { order: -1; position: sticky; top: -10px; z-index: 3; display: flex; flex-direction: column; gap: 8px;
+  margin: -10px -18px 0 -12px; padding: 8px 14px 10px; background: var(--mPanel); border-bottom: 1px solid #000; box-shadow: 0 8px 14px -8px rgba(0,0,0,0.7); }
+html.mobile #showPanel .mStick > * { margin: 0 !important; }
+html.mobile #showPanel .mStick .aqSeg button { min-height: 36px; }
+html.mobile #showPanel .mStick .aqSeg button b { font-size: 13px !important; }
 html.mobile #showPanel .mStick .spColRow { display: flex !important; flex-direction: row !important; align-items: center !important; flex-wrap: nowrap !important; gap: 9px !important;
-  overflow-x: auto; overflow-y: hidden; padding: 2px 30px 2px 2px !important; touch-action: auto !important; scrollbar-width: none; overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
-html.mobile #showPanel .mStick .spColRow.atEnd { -webkit-mask-image: none; mask-image: none; }
+  overflow-x: auto; overflow-y: hidden; padding: 2px; touch-action: pan-x; scrollbar-width: none; }
 html.mobile #showPanel .mStick .spColRow::-webkit-scrollbar { display: none; }
 html.mobile #showPanel .mStick .spColRow .spSlots { display: flex; gap: 9px; flex: none; }
 html.mobile #showPanel .mStick .spColRow .spCombos { display: flex !important; flex-wrap: nowrap !important; gap: 9px !important; flex: none; overflow: visible !important; padding: 0 !important; margin: 0 !important; border-left: 0 !important; }
 html.mobile #showPanel .mStick :is(.spSlot, .spSlotAdd) { width: 38px !important; height: 38px !important; }
 html.mobile #showPanel .mStick .spCombos > button { width: 34px !important; height: 34px !important; flex: none; }
-html.mobile #showPanel .mFx { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-/* the effects: two big tiles across; a swipe that starts on one still scrolls */
-html.mobile #showPanel :is(.spPresets, .spFx) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
-html.mobile #showPanel :is(.spPreset, .spFxTile) { position: relative; padding: 7px !important; border-radius: 16px !important; touch-action: pan-y !important; }
-html.mobile #showPanel :is(.spPreset, .spFxTile) canvas { border-radius: 11px !important; touch-action: pan-y !important; }
-html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 13.5px !important; font-weight: 600 !important; padding-top: 6px; }
-html.mobile #showPanel .spPreset.sel { box-shadow: 0 0 0 3px var(--mLime) !important; }
-/* there's more: a lime rail on the right, a pill at the bottom, a fade beneath it */
+html.mobile #showPanel .mStick .spSpeedRow { padding: 0 2px; }
+html.mobile #showPanel .mStick .spSpeedRow[hidden] { display: none !important; }
+html.mobile #showPanel .mStick .aqSlider { font-size: 13px; }
+html.mobile #showPanel .mStick input[type=range] { height: 26px; }
+/* the effects: two big tiles across */
+html.mobile #showPanel :is(.spPresets, .spFx) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 12px !important; }
+html.mobile #showPanel :is(.spPreset, .spFxTile) { padding: 7px !important; border-radius: 16px !important; }
+html.mobile #showPanel :is(.spPreset, .spFxTile) canvas { border-radius: 11px !important; }
+html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 15px !important; font-weight: 600 !important; padding-top: 6px; }
+html.mobile #showPanel .spPreset.sel { box-shadow: 0 0 0 3px #d8ff3a !important; }
+/* there's more: a lime rail on the right and a pill at the bottom */
 #showPanel .mRail { position: absolute; right: 5px; width: 5px; border-radius: 3px; background: rgba(255,255,255,0.1); z-index: 4; pointer-events: none; }
-#showPanel .mRail i { display: block; width: 100%; border-radius: 3px; background: var(--mLime); box-shadow: 0 0 8px rgba(216,255,58,0.5); }
+#showPanel .mRail i { display: block; width: 100%; border-radius: 3px; background: #d8ff3a; box-shadow: 0 0 8px rgba(216,255,58,0.5); }
 #showPanel .mRail.none { display: none; }
 #showPanel .mMore { position: absolute; z-index: 5; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 9px 16px; border-radius: 999px; border: 1px solid #6f8c06;
-  background: linear-gradient(180deg, #e6ff6a, #c2ea2e); color: #141a00; font: 700 13px/1 var(--mFont); box-shadow: 0 8px 18px rgba(0,0,0,0.55);
+  background: linear-gradient(180deg, #e6ff6a, #c2ea2e); color: #141a00; font: 700 13px/1 -apple-system, system-ui, sans-serif; box-shadow: 0 8px 18px rgba(0,0,0,0.55);
   animation: mMore 1.6s ease-in-out infinite; transition: opacity 0.25s; touch-action: manipulation; }
 #showPanel .mMore span { display: inline-block; margin-left: 4px; font-size: 15px; }
 #showPanel .mMore.gone { opacity: 0; pointer-events: none; }
 @keyframes mMore { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 3px); } }
 html.mobile #showPanel:not(.open) :is(.mRail, .mMore) { display: none; }
+
+/* Build: bigger rows and choices; the venue row offers the arena and the stadium only */
+html.mobile #buildPanel .bTab { min-height: 40px; font-size: 14px !important; }
+html.mobile #buildPanel .bOpt { min-height: 44px; font-size: 14px !important; padding: 0 14px !important; }
+html.mobile #buildPanel .bLabel { font-size: 13px !important; }
+html.mobile #buildPanel .bRow[data-f="venue"] .bOpt:is([data-k="cricket"], [data-k="festival"]) { display: none !important; }
+
+/* --- the 2D lights map: a card under the top row ------------------------------------------ */
+html.mobile #birdPanel { position: fixed !important; z-index: 58; left: calc(var(--mGap) + var(--mLeft)) !important; right: calc(var(--mGap) + var(--mRight)) !important;
+  top: calc(var(--mGap) * 3 + var(--mIcon) * 2 + var(--mTop)) !important; bottom: auto !important; border-radius: 18px; overflow: hidden; background: transparent;
+  border: 1px solid #000; box-shadow: inset 0 0 0 1px var(--mLine), 0 18px 44px rgba(0,0,0,0.6); }
+html.mobile #birdPanel .birdHeader { background: var(--mPanel) !important; border: 0 !important; border-radius: 0 !important; padding: 8px 10px !important; }
+html.mobile #birdPanel .birdHeader span { font-size: 0 !important; letter-spacing: 0 !important; }
+html.mobile #birdPanel .birdHeader span::after { content: 'The lights from above'; font: 600 14px/1 -apple-system, system-ui, sans-serif; color: #fff; }
+html.mobile #birdPanel :is([data-bird], #birdPng) { display: none !important; }
+html.mobile #birdPanel #birdClose { width: 30px; height: 30px; border-radius: 50%; padding: 0; }
+html.mobile #birdView { width: 100% !important; height: auto !important; aspect-ratio: 158 / 122; border: 0 !important; border-radius: 0 !important; }
+
+/* --- full screen: the iPhone tip ---------------------------------------------------------- */
+#mFullTip { position: fixed; z-index: 90; left: 50%; top: calc(var(--mGap) * 3 + var(--mIcon) * 2 + var(--mTop)); transform: translate(-50%, -6px); width: min(340px, calc(100vw - 32px)); box-sizing: border-box;
+  padding: 12px 14px; border-radius: 14px; background: rgba(18,19,22,0.95); border: 1px solid rgba(216,255,58,0.5); color: #e9e9ef;
+  font: 500 14px/1.4 -apple-system, system-ui, sans-serif; text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; }
+#mFullTip.on { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+#mFullTip b { color: #d8ff3a; }
+
+/* --- the phone on its side ----------------------------------------------------------------- */
+@media (orientation: landscape) and (max-height: 560px) {
+  html.mobile { --mIcon: 40px; }
+  #mCam button { width: 48px; height: 48px; font-size: 34px; }
+  #mCam .mName { padding: 6px 8px; }
+  #mJoy { width: 112px; height: 112px; bottom: calc(16px + var(--mBottom)); }
+  html.mobile #fabDock { bottom: calc(16px + var(--mBottom)) !important; gap: 10px !important; }
+  html.mobile #fabDock > #mFly { width: 56px !important; height: 56px !important; }
+  html.mobile #fabDock > #showFab { height: 50px !important; }
+  #mHint { bottom: calc(140px + var(--mBottom)); }
+  /* the cards come in on the right, full height, leaving the room on the left */
+  html.mobile :is(#showPanel, #buildPanel, #settingsPanel) { left: auto !important; top: calc(var(--mGap) + var(--mTop)) !important; height: auto !important; width: min(380px, 46vw) !important; }
+  html.mobile #showPanel { width: min(540px, 60vw) !important; }
+  html.mSheet :is(#mCam, #mMap, #mBuild) { display: none !important; }
+  /* Show: the controls in a column on the left, the effects on the right */
+  html.mobile #showPanel .spBody { display: grid !important; grid-template-columns: minmax(170px, 40%) minmax(0, 1fr); align-items: start; column-gap: 12px; }
+  html.mobile #showPanel .spBody > * { grid-column: 2; }
+  html.mobile #showPanel .spBody > .mStick { grid-column: 1; grid-row: 1 / span 40; position: sticky; top: 0; margin: 0; padding: 0 10px 0 0; border-bottom: 0; border-right: 1px solid #000;
+    box-shadow: none; max-height: calc(100vh - 100px); overflow-y: auto; }
+  html.mobile #showPanel .mStick .aqSeg { display: grid !important; grid-template-columns: 1fr 1fr; }
+  html.mobile #showPanel .mStick .aqSeg button { min-height: 32px !important; flex: none !important; }
+  html.mobile #showPanel .mStick .aqSeg button b { font-size: 11.5px !important; }
+  html.mobile #showPanel .mStick .spColRow { flex-wrap: wrap !important; overflow: visible !important; }
+  html.mobile #showPanel .mStick .spColRow .spCombos { flex-wrap: wrap !important; }
+  html.mobile #showPanel .mStick .aqSlider { display: grid !important; grid-template-columns: minmax(0, 1fr) 42px !important; row-gap: 2px; }
+  html.mobile #showPanel .mStick .aqSlider > span { grid-column: 1 / -1; }
+  html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 13px !important; }
+  /* the map: a card on the left */
+  html.mobile #birdPanel { right: auto !important; width: min(380px, 48vw); top: calc(var(--mGap) * 2 + 48px + var(--mTop)) !important; }
+}
+
+/* --- an iPad: the cards centred and not too wide; more effects across -------------------- */
+@media (min-width: 700px) and (min-height: 600px) {
+  html.mobile :is(#showPanel, #buildPanel, #settingsPanel) { left: 50% !important; right: auto !important; width: min(640px, 92vw) !important; transform: translateX(-50%) !important; height: min(44vh, 520px) !important; }
+  html.mobile #showPanel :is(.spPresets, .spFx) { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  html.mobile #birdPanel { left: 50% !important; right: auto !important; width: min(560px, 80vw); transform: translateX(-50%); }
+}
+
+/* --- one card, one surface: the header is flat, the pinned area compact -------------------- */
+html.mobile :is(#showPanel .spHead, #buildPanel .bHead) { background: var(--mPanel) !important; border-bottom: 1px solid #000 !important; box-shadow: none !important; border-radius: 0 !important; }
+html.mobile #showPanel .spBody > .mStick { display: grid !important; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 8px; }
+html.mobile #showPanel .mStick > :is(.spKind, .spColRow) { grid-column: 1 / -1; }
+html.mobile #showPanel .mStick:has(.spGoboRow[hidden]) > .spSpeedRow { grid-column: 1 / -1; }
+html.mobile #showPanel .mStick .aqSeg button { min-height: 32px !important; }
+html.mobile #showPanel .mStick .aqSlider { display: grid !important; grid-template-columns: minmax(0, 1fr) 38px !important; row-gap: 0; font-size: 12px !important; }
+html.mobile #showPanel .mStick .aqSlider > span { grid-column: 1 / -1; color: #b9bbc3; }
+html.mobile #showPanel .mStick .aqSlider em { font-size: 11px; }
+/* the bottom fades out under the More pill, and the last effects scroll clear of it */
+html.mobile #showPanel .spBody { padding-bottom: 64px !important; }
 html.mobile #showPanel.open::after { content: ''; position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; height: 64px; border-radius: 0 0 20px 20px;
   background: linear-gradient(180deg, rgba(28,29,33,0), #1c1d21 80%); pointer-events: none; transition: opacity 0.25s; }
 html.mobile #showPanel.mEnd::after { opacity: 0; }
-
-/* --- Your message: selected, it asks for a second tap; the editor opens right under it ---------- */
-#showPanel .spPreset .mAgainTag { position: absolute; z-index: 2; left: 50%; top: 10px; transform: translateX(-50%) scale(0.9); padding: 4px 9px; border-radius: 999px;
-  background: var(--mLime); color: #141a00; font: 800 10.5px/1 var(--mFont); font-style: normal; letter-spacing: 0.04em; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
-#showPanel .spPreset.mAgain .mAgainTag { opacity: 1; transform: translateX(-50%) scale(1); animation: mAgainTag 1.5s ease-in-out infinite; }
-#showPanel .spPreset.mAgain { animation: mAgain 1.5s ease-in-out infinite; }
-#showPanel .spPreset.mAgain::after { content: ''; position: absolute; inset: -3px; border-radius: 18px; border: 2px solid var(--mLime); pointer-events: none; animation: mAgainRing 1.5s ease-out infinite; }
-@keyframes mAgain { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.025); } 55% { transform: scale(0.995); } }
-@keyframes mAgainRing { 0% { opacity: 0.8; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(1.06); } }
-@keyframes mAgainTag { 0%, 100% { box-shadow: 0 0 0 0 rgba(216,255,58,0.55); } 50% { box-shadow: 0 0 0 6px rgba(216,255,58,0); } }
-.mMsgEd { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px; background: #141518; border: 1px solid var(--mLine);
-  animation: mMsgIn 0.25s cubic-bezier(0.2, 1, 0.3, 1); }
-.mMsgEd[hidden] { display: none; }
-@keyframes mMsgIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-.mMsgPrev { min-height: 34px; display: flex; align-items: center; justify-content: center; padding: 4px 8px; border-radius: 10px; background: #000; text-align: center;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.02em; }
-.mMsgLive { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 10px; background: #000; display: block; }
-.mMsgIn { height: 42px; padding: 0 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); background: #0d0e10; color: #fff;
-  font: 600 16px/1 var(--mFont); -webkit-user-select: text; user-select: text; outline: none; }
-.mMsgIn:focus { border-color: var(--mLime); }
-.mMsgRow { display: flex; flex-wrap: wrap; gap: 8px; }
-.mMsgCols button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); background: var(--c); padding: 0; }
-.mMsgCols button.sel { border-color: var(--mLime); box-shadow: 0 0 0 2px #141518, 0 0 0 4px var(--mLime); }
-.mMsgFonts button { height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.14); background: #222428; color: #e9e9ef; }
-.mMsgFonts button.sel { background: var(--mLime); color: #141a00; border-color: #6f8c06; }
-.mMsgDone { align-self: flex-end; height: 36px; padding: 0 18px; border-radius: 999px; border: 1px solid #6f8c06; background: linear-gradient(180deg, #e6ff6a, #c2ea2e); color: #141a00; font: 800 13px/1 var(--mFont); }
-
-/* --- Build: full and purposeful — the big choices as picture tiles, the rest smaller ---------- */
-html.mobile #buildPanel .bTabs { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px !important; padding: 10px 12px 4px; }
-html.mobile #buildPanel .bTab { min-height: 34px; padding: 0 4px !important; border-radius: 10px !important; font: 600 12.5px/1 var(--mFont) !important; }
-html.mobile #buildPanel .bBody { padding: 4px 12px 18px !important; display: flex; flex-direction: column; gap: 12px; }
-html.mobile #buildPanel .bAbout { margin: 4px 2px 0; color: #9fa1aa; font: 500 12.5px/1.35 var(--mFont); }
-html.mobile #buildPanel .bSection { display: flex; flex-direction: column; gap: 12px; }
-html.mobile #buildPanel .bRow { display: flex; flex-direction: column; gap: 9px; padding: 12px; border-radius: 16px; background: rgba(255,255,255,0.035); border: 1px solid var(--mLine); }
-html.mobile #buildPanel .bLabel { font: 700 11px/1 var(--mFont) !important; letter-spacing: 0.1em; text-transform: uppercase; color: #b9bbc3; }
-html.mobile #buildPanel .bSeg { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; }
-html.mobile #buildPanel .bOpt { min-height: 44px; padding: 0 10px !important; border-radius: 12px !important; font: 600 14px/1.1 var(--mFont) !important; }
-/* the first choice on each page is the big one: taller tiles */
-html.mobile #buildPanel .bSection > .bRow:first-child .bOpt { min-height: 58px; font-size: 15px !important; }
-/* venue and set-up: picture tiles */
-html.mobile #buildPanel .bRow:is([data-f="venue"], [data-f="mode"]) .bOpt { position: relative; isolation: isolate; min-height: 86px !important; display: flex; align-items: flex-end; justify-content: flex-start;
-  padding: 10px !important; overflow: hidden; color: #fff !important; text-shadow: 0 1px 6px rgba(0,0,0,0.9); background-size: cover !important; background-position: center !important; }
-html.mobile #buildPanel .bRow:is([data-f="venue"], [data-f="mode"]) .bOpt::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.75)); }
-html.mobile #buildPanel .bRow:is([data-f="venue"], [data-f="mode"]) .bOpt.sel { box-shadow: 0 0 0 3px var(--mLime) !important; color: var(--mLime) !important; }
-html.mobile #buildPanel [data-f="venue"] .bOpt[data-k="arena"] { background-image: url(../assets/venue-arena.jpg) !important; }
-html.mobile #buildPanel [data-f="venue"] .bOpt[data-k="stadium"] { background-image: url(../assets/venue-stadium.jpg) !important; }
-html.mobile #buildPanel [data-f="mode"] .bOpt[data-k="concert"] { background-image: url(../assets/thumb-concert.jpg) !important; }
-html.mobile #buildPanel [data-f="mode"] .bOpt[data-k="hockey"] { background-image: url(../assets/thumb-hockey.jpg) !important; }
-html.mobile #buildPanel [data-f="mode"] .bOpt[data-k="basketball"] { background-image: url(../assets/thumb-basketball.jpg) !important; }
-html.mobile #buildPanel [data-f="mode"] .bOpt[data-k="football"] { background-image: url(../assets/venue-stadium.jpg) !important; }
-html.mobile #buildPanel [data-f="mode"] .bOpt[data-k="empty"] { background-image: url(../assets/thumb-creative.jpg) !important; }
-html.mobile #buildPanel .bRow[data-f="venue"] .bOpt:is([data-k="cricket"], [data-k="festival"]) { display: none !important; }
-
-/* --- the bird's-eye map: a card like the others (close, title, Lights / Arena) ------------------ */
-html.mobile #birdPanel { position: fixed !important; z-index: 58; left: calc(var(--mGap) + var(--mLeft)) !important; right: calc(var(--mGap) + var(--mRight)) !important;
-  top: calc(var(--mGap) * 4 + var(--mIcon) * 3 + var(--mTop)) !important; bottom: auto !important; border-radius: 20px; overflow: hidden; background: transparent;
-  border: 1px solid #000; box-shadow: inset 0 0 0 1px var(--mLine), 0 18px 44px rgba(0,0,0,0.6); }
-html.mobile #birdPanel .birdHeader { display: none !important; }
-html.mobile #birdPanel .mSeg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 10px; background: var(--mPanel); border-bottom: 1px solid #000; }
-.mSeg button { height: 32px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: #222428; color: #e9e9ef; font: 600 13px/1 var(--mFont); }
-.mSeg button.sel { background: var(--mLime); color: #141a00; border-color: #6f8c06; }
-html.mobile #birdView { width: 100% !important; height: auto !important; aspect-ratio: 158 / 122; border: 0 !important; border-radius: 0 !important; }
-html.mMap #mHint { display: none !important; }
-
-/* --- full screen: the iPhone tip ---------------------------------------------------------------- */
-#mFullTip { position: fixed; z-index: 90; left: 50%; top: calc(var(--mGap) * 4 + var(--mIcon) * 3 + var(--mTop)); transform: translate(-50%, -6px); width: min(340px, calc(100vw - 32px)); box-sizing: border-box;
-  padding: 12px 14px; border-radius: 14px; background: rgba(18,19,22,0.95); border: 1px solid rgba(216,255,58,0.5); color: #e9e9ef;
-  font: 500 14px/1.4 var(--mFont); text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; }
-#mFullTip.on { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
-#mFullTip b { color: var(--mLime); }
-
-/* --- left alone: only the show; any touch brings the buttons back ------------------------------- */
-:is(#mCam, .mIcon, #mJoy, #fabDock, #mHot) { transition: opacity 0.6s ease; }
-html.mIdle :is(#mCam, .mIcon, #mJoy, #fabDock, #mHot, #mHint) { opacity: 0 !important; pointer-events: none !important; }
-
-/* --- focus mode: nothing but the show; a thin line when you touch, to leave --------------------- */
-html.mFocus :is(#mCam, .mIcon, #mJoy, #fabDock, #mHot, #mHint, #mFxTray, #birdPanel, #mFullTip, #showPanel, #buildPanel, #settingsPanel, #mScrim) { display: none !important; }
-#mFocusExit { position: fixed; z-index: 95; left: 50%; bottom: calc(30px + var(--mBottom)); transform: translate(-50%, 8px); padding: 8px 16px; border-radius: 999px;
-  background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.14); color: rgba(255,255,255,0.88); font: 400 12.5px/1 var(--mFont); letter-spacing: 0.06em;
-  opacity: 0; pointer-events: none; transition: opacity 0.35s, transform 0.35s; }
-#mFocusExit.on { opacity: 1; transform: translate(-50%, 0); }
-
-/* --- the phone on its side ---------------------------------------------------------------------- */
+/* Build's page tabs: all six fit across a phone */
+html.mobile #buildPanel .bTabs, html.mobile #buildPanel [class*="bTabs"] { display: flex; gap: 2px; }
+html.mobile #buildPanel .bTab { flex: 1 1 0; min-width: 0; padding: 0 2px !important; font-size: 12.5px !important; }
 @media (orientation: landscape) and (max-height: 560px) {
-  html.mobile { --mIcon: 40px; }
-  #mCam { grid-template-columns: 46px minmax(0, 1fr) 46px; width: min(300px, 50vw); }
-  #mCam button { width: 46px; height: 46px; font-size: 34px; }
-  #mCam .mName { height: 46px; }
-  #mJoy { width: 100px; height: 100px; bottom: calc(16px + var(--mBottom)); }
-  #mHint { bottom: calc(126px + var(--mBottom)); }
-  #mHot { bottom: calc(14px + var(--mBottom)); gap: 8px; }
-  #mFxBtn { height: 36px; }
-  html.mobile #mHot > #showFab { height: 46px !important; }
-  html.mobile #fabDock { bottom: calc(14px + var(--mBottom)) !important; gap: 8px !important; }
-  :is(#mUp, #mDown) { width: 46px; height: 46px; }
-  html.mobile #fabDock > #mFly { width: 54px !important; height: 54px !important; }
-  #mFxTray { bottom: calc(104px + var(--mBottom)); width: min(620px, calc(100vw - 40px)); }
-  .mFxGrid { grid-template-columns: repeat(9, minmax(0, 1fr)); padding: 10px 10px 12px; }
-  .mFxTile i { width: 50px; height: 50px; }
-  .mFxTile svg { width: 23px; height: 23px; }
-  html.mobile :is(#showPanel, #buildPanel, #settingsPanel) { width: min(380px, 46vw) !important; }
+  /* the left column: one slider per row, colour sets wrapping inside it */
+  html.mobile #showPanel .spBody > .mStick { grid-template-columns: 1fr !important; }
+  html.mobile #showPanel .mStick > .spSpeedRow { grid-column: 1 / -1 !important; }
+  html.mobile #showPanel .mStick .spColRow .spCombos { flex: 1 1 100% !important; flex-wrap: wrap !important; }
+  html.mobile #showPanel .mStick .spColRow .spCombos > button { width: 30px !important; height: 30px !important; }
+  /* the More pill under the effects column */
+  #showPanel .mMore { left: 70%; }
+}
+
+/* === panels docked to a side, top to bottom (2026-10-08) =====================================
+   Show and Build open on the right (their buttons are on the right), Settings on the left
+   (the gear is top left). Full height, so far more effects show; a strip of the room stays
+   visible on the other side, and tapping it closes the panel. */
+html.mobile :is(#showPanel, #buildPanel) { left: auto !important; right: calc(var(--mGap) + var(--mRight)) !important;
+  top: calc(var(--mGap) + var(--mTop)) !important; bottom: calc(var(--mGap) + var(--mBottom)) !important; height: auto !important; width: min(330px, 82vw) !important; transform: none !important; }
+html.mobile #settingsPanel { right: auto !important; left: calc(var(--mGap) + var(--mLeft)) !important;
+  top: calc(var(--mGap) + var(--mTop)) !important; bottom: calc(var(--mGap) + var(--mBottom)) !important; height: auto !important; max-height: none !important; width: min(330px, 82vw) !important; transform: none !important; }
+/* a panel open: the top row steps aside too (it would sit under the panel) */
+html.mSheet :is(#mCam, #mMap, #mBuild, #mSet, #mFull) { display: none !important; }
+/* Show in a tall, narrow panel: kinds as 2 x 2, one slider per row, two effects across */
+html.mobile #showPanel .spBody > .mStick { grid-template-columns: 1fr !important; }
+html.mobile #showPanel .mStick > .spSpeedRow { grid-column: 1 / -1 !important; }
+html.mobile #showPanel .mStick .aqSeg { display: grid !important; grid-template-columns: 1fr 1fr; }
+html.mobile #showPanel .mStick .aqSeg button { flex: none !important; min-height: 32px !important; }
+html.mobile #showPanel .mStick .aqSeg button b { font-size: 12px !important; }
+html.mobile #showPanel :is(.spPresets, .spFx) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 13.5px !important; }
+#showPanel .mMore { left: 50% !important; }
+@media (orientation: landscape) and (max-height: 560px) {
+  html.mobile :is(#showPanel, #buildPanel) { width: min(380px, 46vw) !important; }
   html.mobile #showPanel { width: min(540px, 60vw) !important; }
-  /* Show: two columns that scroll each by itself — controls left, effects right */
+  html.mobile #settingsPanel { width: min(380px, 46vw) !important; }
+  #showPanel .mMore { left: 70% !important; }
+}
+@media (min-width: 700px) and (min-height: 600px) {   /* iPad: docked too, a bit wider */
+  html.mobile :is(#showPanel, #buildPanel) { left: auto !important; width: min(440px, 48vw) !important; }
+  html.mobile #settingsPanel { right: auto !important; width: min(420px, 46vw) !important; }
+  html.mobile #showPanel :is(.spPresets, .spFx) { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+
+/* === the camera buttons hug the view's name, centred ========================================= */
+#mCam { justify-content: center; gap: 4px !important; }
+#mCam .mName { flex: 0 1 auto !important; min-width: 96px; max-width: 170px; padding: 8px 12px !important; }
+
+/* === the phone app's name: CREATIVE STAGE ================================================== */
+#mGate .mgName { margin: 0; font: 300 30px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; color: #fff; }
+#mGate .mgName b { font-weight: 800; background: linear-gradient(90deg, #c8f03a, #ecff80); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#bootLoader h1 .csName { font-weight: 300; color: #fff; margin-right: 0.38em; }
+
+/* === the colour strip scrolls sideways ======================================================
+   A phone combines touch rules down the page: the effects list allowing only up-and-down
+   swipes left the colour strip inside it with no swipe at all. Both let the browser decide. */
+html.mobile #showPanel .spBody, html.mobile #showPanel .mStick, html.mobile #showPanel .mStick .spColRow { touch-action: auto !important; }
+html.mobile #showPanel .mStick .spColRow { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 30px !important; }
+html.mobile #showPanel .mStick .spColRow.atEnd { -webkit-mask-image: none; mask-image: none; }
+
+/* === up and down: a pair just above FLY, in the same stack (they can't overlap) =============== */
+html.mobile #fabDock > #mUpDown { order: -1; display: flex; gap: 10px; }
+#mUpDown button { width: 56px; height: 56px; border-radius: 50%; padding: 6px 0 0; border: 2px solid rgba(216,255,58,0.7); background: rgba(18,19,22,0.8); color: #d8ff3a;
+  display: grid; justify-items: center; align-content: center; gap: 1px; box-shadow: 0 8px 22px rgba(0,0,0,0.55); touch-action: none; -webkit-user-select: none; user-select: none; }
+#mUpDown svg { width: 24px; height: 24px; }
+#mUpDown small { font: 800 8.5px/1 -apple-system, system-ui, sans-serif; letter-spacing: 0.08em; }
+#mUpDown button.held { background: #d8ff3a; color: #141a00; transform: scale(0.94); }
+#mUpDown #mDown { display: none; }
+#mUpDown.flying #mDown { display: grid; }
+@media (orientation: landscape) and (max-height: 560px) {
+  #mUpDown button { width: 48px; height: 48px; }
+  #mUpDown svg { width: 20px; height: 20px; }
+  html.mobile #fabDock { gap: 8px !important; }
+}
+html.mobile #fabDock > * { align-self: flex-end !important; }   /* the stack lines up on the right edge */
+html.mobile #fabDock { flex-wrap: nowrap !important; }   /* the desktop wraps it in reverse, which flips "right" to the left */
+
+/* === turning the phone: the view never stretches ============================================
+   The page itself never scrolls or grows past the screen while the phone turns; the 3D view
+   is pinned to it and main.js refits it every frame the size differs. */
+html.mobile, html.mobile body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+html.mobile body > canvas { position: fixed !important; left: 0; top: 0; }
+
+/* === Show: the effects in their own column (.mFx) ===========================================
+   Upright: one list under the pinned controls; the panel scrolls.
+   On its side: two columns that scroll each by itself, controls left, effects right. */
+html.mobile #showPanel .mFx { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (orientation: landscape) and (max-height: 560px) {
   html.mobile #showPanel .spBody { display: grid !important; grid-template-columns: minmax(170px, 40%) minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr);
     overflow: hidden !important; padding: 10px 0 0 12px !important; min-height: 0; flex: 1 1 auto; column-gap: 0 !important; }
-  html.mobile #showPanel .spBody > .mStick { grid-column: 1; grid-row: 1; position: static; height: 100%; overflow-y: auto; overscroll-behavior: contain;
-    padding: 0 12px 16px 0; margin: 0; box-sizing: border-box; align-content: start; border-bottom: 0; border-right: 1px solid #000; box-shadow: none; }
+  html.mobile #showPanel .spBody > .mStick { grid-column: 1 !important; grid-row: 1 !important; position: static !important; height: 100%; max-height: none !important;
+    overflow-y: auto !important; overscroll-behavior: contain; padding: 0 12px 16px 0 !important; margin: 0 !important; box-sizing: border-box; align-content: start; }
   html.mobile #showPanel .spBody > .mFx { grid-column: 2; grid-row: 1; height: 100%; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box;
     padding: 0 18px 64px 12px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   html.mobile #showPanel .spBody > .mFx::-webkit-scrollbar { display: none; }
-  html.mobile #showPanel .mStick .spColRow { flex-wrap: wrap !important; overflow: visible !important; -webkit-mask-image: none; mask-image: none; padding-right: 2px !important; }
-  html.mobile #showPanel .mStick .spColRow .spCombos { flex: 1 1 100% !important; flex-wrap: wrap !important; }
-  html.mobile #showPanel .mStick .spCombos > button { width: 30px !important; height: 30px !important; }
-  html.mobile #showPanel :is(.spPreset, .spFxTile) span { font-size: 13px !important; }
-  #showPanel .mMore { left: 70%; }
-  /* the map: a card beside the left column, its height set by the screen */
-  html.mobile #birdPanel { left: calc(var(--mGap) * 2 + var(--mIcon) + var(--mLeft)) !important; right: auto !important; top: calc(var(--mGap) + 54px + var(--mTop)) !important;
-    width: calc((100vh - 54px - var(--mGap) * 3 - 84px) * 158 / 122); max-width: 46vw; }
-  html.mMap #mJoy { display: none !important; }
 }
 
-/* --- an iPad: the cards a little wider; more effects across ------------------------------------ */
-@media (min-width: 700px) and (min-height: 600px) {
-  html.mobile :is(#showPanel, #buildPanel) { width: min(440px, 48vw) !important; }
-  html.mobile #settingsPanel { width: min(420px, 46vw) !important; }
-  html.mobile #showPanel :is(.spPresets, .spFx) { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-  html.mobile #birdPanel { left: 50% !important; right: auto !important; width: min(560px, 80vw); transform: translateX(-50%); }
-  #mFxTray { width: min(460px, 80vw); }
-}
-
-/* the desktop's own rules for those buttons don't apply here: exact sizes, no key letters */
-html.mobile #fabDock > :is(#mUp, #mDown) { width: 52px !important; height: 52px !important; min-width: 0 !important; padding: 0 !important; border-radius: 50% !important;
-  border: 2px solid rgba(216,255,58,0.7) !important; background: rgba(18,19,22,0.8) !important; color: var(--mLime) !important; }
-html.mobile #fabDock > :is(#mUp, #mDown).held { background: var(--mLime) !important; color: #141a00 !important; }
-html.mobile #fabDock > #mDown { display: none !important; }
-html.mobile.mFlying #fabDock > #mDown { display: grid !important; }
-html.mobile #fabDock > #mUp { display: grid !important; }
-html.mobile #mHot :is(kbd, .cfIcon, .hdLight) { display: none !important; }
-@media (orientation: landscape) and (max-height: 560px) {
-  html.mobile #fabDock > :is(#mUp, #mDown) { width: 46px !important; height: 46px !important; }
-}
-/* Show's top: the title centred like every card; what's live and Off at the right */
-html.mobile #showPanel .spHead .spTitle { position: absolute; left: 50%; transform: translateX(-50%); font: 600 16px/1 var(--mFont) !important; }
-html.mobile #showPanel .spHead .spLive { position: absolute; right: 64px; top: calc(50% + 4px); transform: translateY(-50%); font-size: 11px; }
-html.mobile #showPanel .spHead .spOff { position: absolute; right: 12px; top: calc(50% + 4px); transform: translateY(-50%); height: 26px; padding: 0 10px; font-size: 12px; }
-/* picture tiles: the label always reads, picked or not (the desktop colours a picked button dark) */
-html.mobile #buildPanel .bRow:is([data-f="venue"], [data-f="mode"]) .bOpt.bOpt { color: #fff !important; -webkit-text-fill-color: #fff !important; text-shadow: 0 1px 6px rgba(0,0,0,0.95) !important; }
-html.mobile #buildPanel .bRow:is([data-f="venue"], [data-f="mode"]) .bOpt.bOpt.sel { color: var(--mLime) !important; -webkit-text-fill-color: var(--mLime) !important; }
-html.mobile #buildPanel .bRow:is([data-f="venue"], [data-f="mode"]) .bOpt.bOpt.sel::after { content: ''; position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--mLime) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141a00' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center / 12px no-repeat; }
-@media (orientation: landscape) and (max-height: 560px) {
-  .mFxGrid { grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); }   /* one even row, however many effects this venue has */
-}
+/* === a swipe that starts on an effect scrolls the list ===================================
+   The tiles let the browser pan; a tap still picks the effect. */
+html.mobile #showPanel :is(.spPreset, .spFxTile, .spPreset canvas, .spFxTile canvas) { touch-action: pan-y !important; }
+/* === the left column never squashes a row (the kind tabs were collapsing to nothing) ====== */
+html.mobile #showPanel .mStick { grid-auto-rows: max-content !important; }
+html.mobile #showPanel .mStick > * { min-height: min-content; flex-shrink: 0; }
