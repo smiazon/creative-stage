@@ -413,7 +413,10 @@ function applyState(rebake = true) {
   for (const l of houseLights) {
     const isEndRig = endRigs.includes(l);
     if (dark) {
-      l.visible = false;
+      // off by its brightness, never its visibility: hiding a light rebuilds every lit
+      // shader in the room, which is the pause the Venue lights switch used to make
+      l.visible = hockey ? l !== houseLights[4] : concert ? l === houseLights[4] : !isEndRig;
+      l.intensity = 0;
     } else if (house) {
       // house lights: every rig on, evenly — pregame / lights-up look
       // (boosted: the old values read dim and flat)
@@ -431,7 +434,8 @@ function applyState(rebake = true) {
   for (const w of bowlWashes) {
     const zoneLevel = lightCfg['wash' + w.userData.zone];
     w.intensity = w.userData.baseIntensity * (house ? 4.4 : concert ? 0.3 : 0.5) * zoneLevel;
-    w.visible = !dark && zoneLevel > 0.01;
+    w.visible = zoneLevel > 0.01;
+    if (dark) w.intensity = 0;   // dark by brightness (see the house lights above)
     w.color.setHex(house ? 0xcfc9bc : 0x8a7a5a);
   }
   // ambient world response: with the house up, the room itself brightens
@@ -504,7 +508,8 @@ function applyState(rebake = true) {
 // change of cue, never per frame.
 let rigLightsOn = null, rigTrackers = 2;
 function syncRigLights() {
-  const want = currentMode === 'concert' && lighting === 'game' && (rigFX.look !== 'blackout' || !!rigFX.uv);
+  // the room's blackout leaves the rig as it is: switching the venue lights must not rebuild shaders
+  const want = currentMode === 'concert' && (lighting === 'game' || lighting === 'blackout') && (rigFX.look !== 'blackout' || !!rigFX.uv);
   if (want === rigLightsOn) return;
   rigLightsOn = want;
   for (const l of showLights) l.visible = want;
@@ -867,6 +872,21 @@ function exportBirdPNG({ width = 2048, orbsOnly = true, download = true } = {}) 
   return { url, width, height };
 }
 
+// The map from above draws without fog, which needs shader variants the room
+// never uses. Built the first time the map opened, they made it hang; built once,
+// quietly, after loading, it opens at once.
+function warmBirdView() {
+  const fog = scene.fog, mask = birdCam.layers.mask;
+  scene.fog = null;
+  try {
+    for (const m of [1 << 2, 1]) {   // the lights only, then the whole arena
+      birdCam.layers.mask = m;
+      if (renderer.compileAsync) renderer.compileAsync(scene, birdCam).catch(() => {}); else renderer.compile(scene, birdCam);
+    }
+  } catch (_) { /* a renderer without it: the first open builds them */ }
+  scene.fog = fog;
+  birdCam.layers.mask = mask;
+}
 function renderBirdView() {
   const rect = birdViewEl.getBoundingClientRect();
   if (rect.width < 4) return;
@@ -920,6 +940,13 @@ const fasciaVideoTex = new THREE.VideoTexture(orbFX.video);
 fasciaVideoTex.colorSpace = THREE.SRGBColorSpace;
 fasciaVideoTex.wrapS = THREE.RepeatWrapping;
 fasciaVideoTex.repeat.set(bowl.fascias[0].tiles || 5, 1);
+// the phone's jumbotron shows the real film, as the video walls do
+if (MOBILE) {
+  const jumboVideoTex = new THREE.VideoTexture(orbFX.video);
+  jumboVideoTex.colorSpace = THREE.SRGBColorSpace;
+  jumboVideoTex.wrapS = THREE.RepeatWrapping;
+  jumboMesh.setVideo?.(jumboVideoTex);
+}
 // projection overlays sit a hair above the playing surfaces
 function roundedShape(w, h, r) {
   const s = new THREE.Shape();
@@ -3097,7 +3124,7 @@ function fitView(force = false) {
   const [w, h] = viewSize();
   if (!force && w === fitW && h === fitH) return;
   fitW = w; fitH = h;
-  window.__fitLens?.(w, h);   // the phone's lens: wider when held upright (mobile.js)
+  if (!focus) window.__fitLens?.(w, h);   // the phone's lens: wider when held upright (mobile.js); focus mode keeps its own
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
@@ -3524,7 +3551,7 @@ function animate() {
   // the head owns the camera in VR; PointerLockControls never engages there
   if (vrView.stereoOn) vrPhone.update(camera, vrView.baseYaw);
   pollGamepad(dt);
-  if (tour) stepTour(); else updateMovement(dt);
+  if (tour) stepTour(); else if (focus) stepFocus(); else updateMovement(dt);
   if (scene.fog?.isFogExp2) {
     const k = Math.min(1, Math.max(0, (camera.position.y - TOP_Y_BOWL * 0.6) / Math.max(10, TOP_Y_BOWL * 1.4)));
     scene.fog.density = fogBase * (1 - 0.84 * k * k * (3 - 2 * k));
@@ -3634,7 +3661,7 @@ function animate() {
   else if (renderer.xr.isPresenting) renderer.render(scene, camera);
   else { if (hazePass.enabled) hazeTick(); composer.render(); }
   // the loading screen lifts once the room's materials are ready and a few frames are on screen
-  if (bootFrames > 0 && bootReady && bootMenu && --bootFrames === 0) window.__boot?.done();
+  if (bootFrames > 0 && bootReady && bootMenu && --bootFrames === 0) { window.__boot?.done(); setTimeout(warmBirdView, 600); }
   // a recording takes the frame now, while the WebGL buffer can still be read
   if (exportFrame) exportFrame();
   if (birdMode !== 'off' && !renderer.xr.isPresenting && !vrView.stereoOn) renderBirdView();
@@ -4271,6 +4298,44 @@ function stepTour() {
   camera.position.copy(_cam.pos);
   camera.lookAt(_cam.look);
   if (camera.fov !== _cam.fov) { camera.fov = _cam.fov; camera.updateProjectionMatrix(); }
+}
+// FOCUS MODE (the phone's star button): the recording's cinematic shots, played
+// live and slower, for as long as you watch, a new plan dealt when one runs out.
+// Stopping leaves the camera where the shot was and eases the lens back.
+let focus = null;
+const focusPlan = () => ({ ...makeTour(240, null, { seed: (Math.random() * 1e9) | 0 }), t0: performance.now(), slow: 0.62 });
+function startFocus() {
+  if (focus || tour || exporting) return false;
+  controls.unlock?.();
+  for (const k in keys) keys[k] = false;
+  focus = focusPlan();
+  return true;
+}
+function stepFocus() {
+  let t = ((performance.now() - focus.t0) / 1000) * focus.slow;
+  if (t >= focus.showLen - 0.05) { focus = focusPlan(); t = 0; }
+  const cut = focus.cuts.find((q) => t < q.t1) || focus.cuts[focus.cuts.length - 1];
+  cut.shot.at(Math.min(1, Math.max(0, (t - cut.t0) / (cut.t1 - cut.t0))), _cam);
+  camera.position.copy(_cam.pos);
+  camera.lookAt(_cam.look);
+  if (Math.abs(camera.fov - _cam.fov) > 0.01) { camera.fov = _cam.fov; camera.updateProjectionMatrix(); }
+}
+function stopFocus() {
+  if (!focus) return;
+  focus = null;
+  flying = true; velY = 0; grounded = false;   // stay right where the shot left you
+  const from = camera.fov;
+  if (window.__fitLens) window.__fitLens(window.innerWidth, window.innerHeight); else camera.fov = userFov;
+  const to = camera.fov, t0 = performance.now();
+  camera.fov = from; camera.updateProjectionMatrix();
+  const ease = () => {
+    if (focus) return;
+    const k = Math.min(1, (performance.now() - t0) / 900), e = 1 - (1 - k) ** 3;
+    camera.fov = from + (to - from) * e;
+    camera.updateProjectionMatrix();
+    if (k < 1) requestAnimationFrame(ease);
+  };
+  requestAnimationFrame(ease);
 }
 // the camera plan for a recording with `showLen` seconds of show
 function makeTour(showLen, pullAt, opts = {}) {
@@ -5020,9 +5085,12 @@ function followShow(dt, now) {
     rigFX.colorB.copy(showTintB);
     // calmer than the rig's own looks: dimmer, darker with the bands, and no lasers
     rigFX.master = showOn ? 0.18 + 0.14 * Math.min(1, showLift * 1.5) : 0.14;   // gentle: well under the rig's own looks
-    rigFX.lasersOn = false; rigFX.strobeOn = false; rigFX.blindersOn = false;
+    // the phone's FX tray can fire every laser, bright, over the calm show
+    rigFX.lasersOn = fxLasers; rigFX.gain.laser = fxLasers ? 3.2 : 1;
+    rigFX.strobeOn = false; rigFX.blindersOn = false;
   }
 }
+var fxLasers = false;   // (var: followShow runs before this line on the first frames)
 // --- the venue's speakers, live -----------------------------------------------------
 // Make a video → "Use venue speakers for music": the song plays from the PA's
 // stacks (audiofx.js: placed round the stage, heard from wherever the camera
@@ -5459,7 +5527,7 @@ function applyAppMode(mode, { entering = false } = {}) {
   const quick = mode === 'quick';
   document.body.classList.toggle('mode-quick', quick);
   document.body.classList.toggle('mode-studio', !quick);
-  if (switchModeBtn) switchModeBtn.innerHTML = `&#8644; Switch to ${quick ? 'Show Studio' : 'Quick Showcase'}${quick ? `<span class="mdLock">${menuUI.lockIcon}</span>` : ''}`;
+  if (switchModeBtn) switchModeBtn.innerHTML = `<svg class="setIco" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg>Switch to ${quick ? 'Show Studio' : 'Quick Showcase'}${quick ? `<span class="mdLock">${menuUI.lockIcon}</span>` : ''}`;
   if (quick) {
     if (directorUI.open) directorUI.toggle(false);
     consoleUI.toggle(false);
@@ -5470,7 +5538,7 @@ function applyAppMode(mode, { entering = false } = {}) {
     if (!directorUI.open) directorUI.toggle(true);
   }
   // a welcome: the stage cannons throw confetti as you walk in
-  if (entering) setTimeout(() => rigFX.fireConfetti(), 500);
+  if (entering && !MOBILE) setTimeout(() => rigFX.fireConfetti(), 500);   // not on the phone: the room just opens
 }
 // the helper's cards: the first time into the room, and the ? in the header
 // every window closed: the tutorial starts on a clear screen
@@ -5590,7 +5658,7 @@ document.getElementById('mmTutorial')?.addEventListener('click', (e) => { e.stop
 {
   const how = document.createElement('button');
   how.id = 'tutorialBtn';
-  how.innerHTML = '&#10067; Show me how';
+  how.innerHTML = '<svg class="setIco" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg>Show me how';
   how.addEventListener('click', (e) => { e.stopPropagation(); tips.start(); });
   document.getElementById('settingsPanel')?.insertBefore(how, document.getElementById('snapBtn'));
   // keyboard shortcuts: off unless wanted
@@ -5832,5 +5900,20 @@ if (RENDER_JOB) {
 
 // --- the phone and tablet showcase ---------------------------------------------------------
 if (MOBILE) {
-  import('./mobile.js').then((m) => m.initMobile({ camera, view: renderer.domElement, controls, nextAngle, touchMove, menuUI, overlay, closeAll: closeAllWindows, toggleFly, isFlying: () => flying, keys }));
+  import('./mobile.js').then((m) => m.initMobile({ camera, view: renderer.domElement, controls, nextAngle, touchMove, menuUI, overlay, closeAll: closeAllWindows, toggleFly, isFlying: () => flying, keys, designer: showUI,
+    focus: { start: startFocus, stop: stopFocus, get on() { return !!focus; } },
+    bird: { set: setBirdMode, get mode() { return birdMode; } },
+    fx: {
+      fireworks: IS_STADIUM ? () => fireworksFX.fire() : null,
+      finale: () => { if (IS_STADIUM) fireworksFX.fireFinale(); pyroFX.firePyro?.(); rigFX.fireConfetti(); pyroFX.fireStreamers?.(); smokeFX.fireJets?.(); arenaFX.firePoppers?.(); },
+      fire: (on) => { pyroFX.setFlames?.(on); if (on) pyroFX.firePyro?.(); },
+      isFire: () => !!pyroFX.state?.flames,
+      pyro: () => pyroFX.firePyro?.(),
+      confetti: () => rigFX.fireConfetti(),
+      streamers: () => pyroFX.fireStreamers?.(),
+      poppers: () => { pyroFX.firePoppers?.(); arenaFX.firePoppers?.(); },
+      smoke: () => smokeFX.fireJets?.(),
+      lasers: (on) => { fxLasers = !!on; rigFX.lasersOn = fxLasers; },
+      isLasers: () => fxLasers,
+    } }));
 }

@@ -938,6 +938,9 @@ export function initShowDesigner({ engine, orbFX, controls, visible, stageAt, on
     },
     get tempo() { return st.tempo; },
     setTempo,
+    // the Your message effect: its words, colour and lettering
+    get text() { return { ...st.text }; },
+    setText,
     // triggers keep shows (pads.js), and fades dim them while they run
     snapshot, restore, describe: showName,
     fadeTo: (to, seconds) => engine.fadeTo(to, seconds),

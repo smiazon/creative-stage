@@ -209,11 +209,13 @@ function makeCrownText() {
 }
 
 // the screen material: scrolling streaks with a panel texture over them
-function screenMaterial(streaks, panels, repeat) {
+function screenMaterial(streaks, panels, repeat, videoRepeat = repeat) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uStreaks: { value: streaks }, uPanels: { value: panels },
       uTime: { value: 0 }, uRepeat: { value: repeat }, uLevel: { value: GLOW },
+      // a real film instead of the board's graphics (setVideo): one 16:9 frame per stretch of screen
+      uVideo: { value: null }, uUseVideo: { value: 0 }, uVRepeat: { value: videoRepeat },
     },
     vertexShader: /* glsl */`
       varying vec2 vUv;
@@ -224,11 +226,16 @@ function screenMaterial(streaks, panels, repeat) {
       uniform float uTime;
       uniform float uRepeat;
       uniform float uLevel;
+      uniform sampler2D uVideo;
+      uniform float uUseVideo;
+      uniform float uVRepeat;
       varying vec2 vUv;
       void main() {
         vec3 bg = texture2D(uStreaks, vec2(vUv.x * uRepeat - uTime * 0.045, vUv.y)).rgb;
         vec4 p = texture2D(uPanels, vUv);
-        gl_FragColor = vec4(mix(bg, p.rgb, p.a) * uLevel, 1.0);
+        vec3 col = mix(bg, p.rgb, p.a);
+        if (uUseVideo > 0.5) col = texture2D(uVideo, vec2(fract(vUv.x * uVRepeat), vUv.y)).rgb;
+        gl_FragColor = vec4(col * uLevel, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -245,8 +252,9 @@ export function buildJumbotron(scene, scoreTex) {
   const streaks = makeStreaks();
   const outerPanels = makePanels(false), innerPanels = makePanels(true);
   const repeatFor = (a, b, r, h) => Math.max(1, Math.round(perimeter(a, b, r) / h / 4));
-  const outerMat = screenMaterial(streaks, outerPanels.texture, repeatFor(A, B, R, H));
-  const innerMat = screenMaterial(streaks, innerPanels.texture, repeatFor(A - T, B - T, R - T, H));
+  const filmsFor = (a, b, r, h) => Math.max(1, Math.round(perimeter(a, b, r) / (h * 16 / 9)));   // 16:9 frames round the band
+  const outerMat = screenMaterial(streaks, outerPanels.texture, repeatFor(A, B, R, H), filmsFor(A, B, R, H));
+  const innerMat = screenMaterial(streaks, innerPanels.texture, repeatFor(A - T, B - T, R - T, H), filmsFor(A - T, B - T, R - T, H));
 
   // the main board: screens outside, screens inside, a housing ring between
   add(band(A, B, R, -H / 2, H / 2, false), outerMat);
@@ -320,6 +328,10 @@ export function buildJumbotron(scene, scoreTex) {
     crownMat.color.setScalar(on ? 1.15 * level : 0);
   };
   grp.setScreens = (v) => { on = !!v; show(); };
+  // the screens play a film (a VideoTexture), or go back to the board's own graphics (null)
+  grp.setVideo = (tex) => {
+    for (const m of [outerMat, innerMat, bellyMat]) { m.uniforms.uVideo.value = tex || null; m.uniforms.uUseVideo.value = tex ? 1 : 0; }
+  };
   grp.setLevel = (k) => { level = Math.max(0, +k || 0); show(); };
   Object.defineProperty(grp, 'screensOn', { get: () => on });
 
