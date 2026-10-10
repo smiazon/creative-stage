@@ -392,7 +392,7 @@ html.mTray :is(#mHot) { display: none !important; }
 }
 
 /* === DEV MODE (code 1234) ========================================================================
-   A small DEV tag under SHOW, and feature 1 — Auto Show — one button under Focus that opens its card. */
+   A small DEV tag under SHOW. Auto Show (one button under Focus that opens its card) began here and is now in both modes. */
 #mDevTag { position: fixed; z-index: 57; left: 50%; bottom: calc(var(--mBottom) + 3px); transform: translateX(-50%); padding: 2px 7px; border-radius: 5px;
   background: rgba(216,255,58,0.12); border: 1px solid rgba(216,255,58,0.4); color: var(--mLime); font: 800 8px/1 var(--mFont); letter-spacing: 0.16em; pointer-events: none; }
 html.mDev #mHot { bottom: calc(26px + var(--mBottom)); }   /* SHOW stands a little higher, so the tag sits clear underneath */
@@ -401,7 +401,7 @@ html.mDev #mHot { bottom: calc(26px + var(--mBottom)); }   /* SHOW stands a litt
 #mAuto[data-st="playing"], #mAuto.on { background: var(--mLime); color: #141a00; border-color: #6f8c06; }
 #mAuto[data-st="playing"] svg path { animation: mAutoBars 0.9s ease-in-out infinite alternate; transform-origin: center bottom; }
 @keyframes mAutoBars { from { transform: scaleY(0.55); } to { transform: scaleY(1); } }
-html:not(.mDev) :is(#mAuto, #mDevTag, #mAutoCard) { display: none !important; }
+html:not(.mDev) #mDevTag { display: none !important; }   /* Auto show is in both modes; dev mode wears its tag */
 html:is(.mSheet, .mTray, .mFocus) #mDevTag, body.menu #mDevTag { display: none !important; }
 html.mIdle #mDevTag { opacity: 0 !important; }
 #mDevTag { transition: opacity 0.6s ease; }
@@ -417,24 +417,34 @@ html.mFocus #mAutoCard, body.menu #mAutoCard { display: none !important; }
 #mAutoCard h4 small { font-weight: 500; color: #8d8f98; margin-left: 6px; }
 #mAutoCard button { font-family: var(--mFont); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 /* the song: its name, its progress, and the way to change it */
-#mAutoCard .maSong { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 14px; background: #24252a; box-shadow: inset 0 0 0 1px var(--mLine); }
+#mAutoCard .maSong { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: #24252a; box-shadow: inset 0 0 0 1px var(--mLine); }
+#mAutoCard .maSongTop { display: flex; align-items: center; gap: 10px; }
 #mAutoCard .maSongInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 #mAutoCard .maSongInfo small { color: #8d8f98; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 #mAutoCard .maSongName { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#mAutoCard .maBar { display: block; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
+#mAutoCard .maTime { display: flex; justify-content: space-between; gap: 8px; margin-top: -4px; }
+#mAutoCard .maClock { flex: none; font-size: 11px; color: #9a9ca5; font-weight: 600; font-variant-numeric: tabular-nums; }
 #mAutoCard .maCount { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--mLime); font-weight: 600; min-height: 14px; font-variant-numeric: tabular-nums; }
+#mAutoCard .maBar { display: block; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
 #mAutoCard .maBar > i { display: block; height: 100%; width: 0; background: var(--mLime); transition: width 0.25s linear; }
+/* Restart · Play · Pause: big and plain; the state it's in is lit */
+#mAutoCard .maTransport { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+#mAutoCard .maTransport button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 58px; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12); background: #2e2f35; color: #fff; font-size: 12px; font-weight: 700; }
+#mAutoCard .maTransport button svg { width: 22px; height: 22px; }
+#mAutoCard .maTransport button.on { background: var(--mLime); border-color: #6f8c06; color: #141a00; }
+#mAutoCard .maTransport button:active { transform: scale(0.95); }
+#mAutoCard .maTransport[data-st="add"] button { opacity: 0.45; }
+#mAutoCard .maTransport[data-st="ready"] [data-tr="play"] { border-color: rgba(216,255,58,0.6); color: var(--mLime); }
+/* Stop show: hands the room back (only while a show is on) */
+#mAutoCard .maStop { display: flex; align-items: center; justify-content: center; gap: 10px; height: 46px; border-radius: 23px; border: 0; background: #2a2b30; color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16); font-size: 15px; font-weight: 700; }
+#mAutoCard .maStop[hidden] { display: none; }
+#mAutoCard .maStop .maIco { width: 12px; height: 12px; border-radius: 3px; background: #ff4d4d; }
+#mAutoCard .maStop:active { transform: scale(0.97); }
 #mAutoCard .maPick { flex: none; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid rgba(216,255,58,0.55); background: rgba(216,255,58,0.08); color: var(--mLime); font-size: 14px; font-weight: 700; }
 #mAutoCard .maPick.first { background: var(--mLime); color: #141a00; border-color: #6f8c06; }
 #mAutoCard .maPick:active { transform: scale(0.96); }
-/* play / stop: the big one */
-#mAutoCard .maPlay { display: flex; align-items: center; justify-content: center; gap: 10px; height: 54px; border-radius: 27px; border: 0; background: var(--mLime); color: #141a00; font-size: 18px; font-weight: 800; letter-spacing: 0.04em;
-  box-shadow: 0 8px 24px rgba(216,255,58,0.22); }
-#mAutoCard .maPlay .maIco { width: 0; height: 0; border-style: solid; border-width: 9px 0 9px 15px; border-color: transparent transparent transparent currentColor; }
-#mAutoCard .maPlay[data-st="playing"] { background: #2a2b30; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16); }
-#mAutoCard .maPlay[data-st="playing"] .maIco { width: 14px; height: 14px; border: 0; border-radius: 3px; background: #ff4d4d; }
-#mAutoCard .maPlay[data-st="add"] { opacity: 0.45; box-shadow: none; }
-#mAutoCard .maPlay:active { transform: scale(0.97); }
 /* the colours: round swatches, the picked ones ringed; the rainbow as a pill */
 #mAutoCard .maCols { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 2px; }
 #mAutoCard .maCols [data-col] { aspect-ratio: 1; border-radius: 50%; border: 0; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35); position: relative; }

@@ -46,12 +46,11 @@ export function initMobile({
   // The way in, like an app with a lock screen:
   //   the CODE screen (0000 the app, 1234 dev mode) → the MAIN MENU (ENTER) → the show.
   //   Settings → Return to main menu comes back to the main menu; its Back goes to the code.
-  let dev = false, devBuilt = false, entered = false, devApi = null;
+  let dev = false, devBuilt = false, entered = false, autoApi = null;
   try { dev = sessionStorage.getItem(DEV_KEY) === '1'; } catch (_) { /* private mode */ }
   const setDev = (on) => {
     root.classList.toggle('mDev', on);
     if (on && !devBuilt) { devBuilt = true; devFeatures(); }
-    if (!on) devApi?.stop?.();   // leaving dev mode: its music stops
   };
   const unlock = (code) => {
     try { sessionStorage.setItem(OK_KEY, '1'); sessionStorage.setItem(DEV_KEY, code === DEV_CODE ? '1' : '0'); } catch (_) { /* private mode */ }
@@ -79,7 +78,7 @@ export function initMobile({
     if (root.classList.contains('mTray')) root.classList.remove('mTray');
     if (bird && bird.mode !== 'off') bird.set('off');
     if (focus?.on) { focus.stop(); root.classList.remove('mFocus'); }
-    devApi?.stop?.();
+    autoApi?.stop?.();
     films();
     overlay.classList.remove('lightsDown');
     overlay.style.display = 'flex';
@@ -356,22 +355,28 @@ export function initMobile({
   // --- Your message: tap it once to play it; tap it again to write your own --------------------
   messageEditor(designer);
 
-  // --- DEV MODE (code 1234): the same app, plus the features being built -----------------------
-  // Feature 1, AUTO SHOW: one button under Focus. No song: "Add music" (pick a file).
-  // A song: "Play auto show". Playing: the song's name, and a tap stops it. Hold to change song.
+  // --- DEV MODE (code 1234): the same app, plus the features being built (released ones move
+  // into the app for everyone: Auto show did). For now it only wears its tag, under SHOW.
   function devFeatures() {
     const tag = document.createElement('div');
     tag.id = 'mDevTag';
     tag.textContent = 'DEV';
     document.body.appendChild(tag);
-    // feature 1, AUTO SHOW: one button under Focus opens its card (the song, play, the colours,
-    // the energy, the style); it shows bars moving while a show runs
+  }
+
+  // --- AUTO SHOW: a song runs the room (autoshow.js). One button under Focus opens its card:
+  // the song (Restart, Play, Pause under its name), Stop show, the PA, the colours, the energy,
+  // the style. The button shows bars moving while the song plays.
+  function autoShowUI() {
     const btn = document.createElement('button');
     btn.id = 'mAuto';
     btn.className = 'mIcon';
     btn.setAttribute('aria-label', 'Auto show');
     const NOTE = svg('<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>');
     const BARS = svg('<path d="M5 20V12M10 20V6M15 20v-9M20 20V9"/>', { w: 2.4 });
+    const RESTART = svg('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>', { w: 2.4 });
+    const PLAY = svg('<path d="M7 4.5v15l13-7.5z"/>', { fill: true });
+    const PAUSE = svg('<rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/>', { fill: true });
     btn.innerHTML = NOTE;
     document.body.appendChild(btn);
     const pick = document.createElement('input');
@@ -380,7 +385,6 @@ export function initMobile({
     pick.accept = 'audio/*,.mp3,.m4a,.wav,.aac';
     pick.hidden = true;
     document.body.appendChild(pick);
-    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const card = document.createElement('div');
     card.id = 'mAutoCard';
     document.body.appendChild(card);
@@ -388,17 +392,26 @@ export function initMobile({
     const ready = import('./autoshow.js').then((m) => {
       M = m;
       auto = m.initAutoShow({ designer, setScreens, pa });
-      devApi = auto;
+      autoApi = auto;
       auto.onChange = paint;
       build();
       return auto;
     });
+    const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
     function build() {
       card.innerHTML = `<div class="mCardHead"><button class="mCardClose" aria-label="Close"></button><span>Auto show</span></div>
         <div class="maBody">
-          <div class="maSong"><div class="maSongInfo"><small>Song</small><b class="maSongName"></b><i class="maBar"><i></i></i><span class="maCount"></span></div>
-            <button class="maPick"></button></div>
-          <button class="maPlay"><span class="maIco"></span><b></b></button>
+          <div class="maSong">
+            <div class="maSongTop"><div class="maSongInfo"><small>Song</small><b class="maSongName"></b></div><button class="maPick"></button></div>
+            <div class="maTransport">
+              <button data-tr="restart" aria-label="Restart">${RESTART}<span>Restart</span></button>
+              <button data-tr="play" aria-label="Play">${PLAY}<span>Play</span></button>
+              <button data-tr="pause" aria-label="Pause">${PAUSE}<span>Pause</span></button>
+            </div>
+            <i class="maBar"><i></i></i>
+            <div class="maTime"><span class="maCount"></span><span class="maClock"></span></div>
+          </div>
+          <button class="maStop"><span class="maIco"></span>Stop show</button>
           <button class="maPA" role="switch"><span>Sound from the PA</span><i></i></button>
           <h4>Colours <small>up to 4, or the rainbow</small></h4>
           <div class="maCols">${M.AUTO_COLOURS.map(([h, n]) => `<button data-col="${h}" style="--c:${h}" aria-label="${n}"></button>`).join('')}
@@ -413,7 +426,7 @@ export function initMobile({
       paint();
     }
     function paint() {
-      const st = !auto?.hasSong ? 'add' : auto.playing ? 'playing' : 'ready';
+      const st = !auto?.hasSong ? 'add' : auto.playing ? 'playing' : auto.paused ? 'paused' : 'ready';
       btn.dataset.st = st;
       btn.innerHTML = st === 'playing' ? BARS : NOTE;
       root.classList.toggle('mAutoOn', st === 'playing');
@@ -422,9 +435,12 @@ export function initMobile({
       card.querySelector('.maSongName').textContent = auto.hasSong ? auto.name : 'No song yet';
       card.querySelector('.maPick').textContent = auto.hasSong ? 'Change song' : 'Choose a song';
       card.querySelector('.maPick').classList.toggle('first', !auto.hasSong);
-      const play = card.querySelector('.maPlay');
-      play.dataset.st = st;
-      play.querySelector('b').textContent = st === 'playing' ? 'Stop' : 'Play';
+      // the transport: the state it's in is lit (Play while playing, Pause while paused)
+      const tr = card.querySelector('.maTransport');
+      tr.dataset.st = st;
+      tr.querySelector('[data-tr="play"]').classList.toggle('on', st === 'playing');
+      tr.querySelector('[data-tr="pause"]').classList.toggle('on', st === 'paused');
+      card.querySelector('.maStop').hidden = !auto.active;
       for (const b of card.querySelectorAll('[data-col]')) b.classList.toggle('sel', !S.rainbow && S.colours.includes(b.dataset.col));
       card.querySelector('[data-rainbow]').classList.toggle('sel', S.rainbow);
       card.querySelector('.maCols').classList.toggle('rainbowOn', S.rainbow);
@@ -433,27 +449,32 @@ export function initMobile({
       const paB = card.querySelector('.maPA');
       paB.classList.toggle('on', S.pa);
       paB.setAttribute('aria-checked', String(S.pa));
+      tick();
     }
-    // the song's progress, while the card is up
-    setInterval(() => {
-      if (!M || !card.classList.contains('open')) return;
+    // the song's progress, its time, and the guess at the music, while the card is up
+    function tick() {
+      if (!M) return;
       const d = auto.duration, c = auto.count;
       card.querySelector('.maBar > i').style.width = `${d ? (auto.time / d) * 100 : 0}%`;
-      // the guess at the music: its tempo, and the bar this effect is on (it changes after the last)
-      card.querySelector('.maCount').textContent = c ? `${c.bpm} BPM · bar ${Math.min(c.bar, c.of)}/${c.of}` : auto.playing ? 'Listening for the beat…' : '';
-    }, 250);
+      card.querySelector('.maClock').textContent = auto.hasSong && d ? `${clock(auto.time)} / ${clock(d)}` : '';
+      card.querySelector('.maCount').textContent = auto.paused ? 'Paused' : c ? `${c.bpm} BPM · bar ${Math.min(c.bar, c.of)}/${c.of}` : auto.playing ? 'Listening for the beat…' : '';
+    }
+    setInterval(() => { if (card.classList.contains('open')) tick(); }, 250);
     async function onCard(e) {
       e.stopPropagation();
       const t = e.target;
-      if (t.closest('.maPick') || (t.closest('.maPlay') && !auto?.hasSong)) { auto?.prime(); pick.click(); return; }   // the picker opens in this touch
+      const tr = t.closest('[data-tr]');
+      // no song yet: Choose, or any of the transport, opens the picker (in this touch)
+      if (t.closest('.maPick') || (tr && !auto?.hasSong)) { auto?.prime(); pick.click(); return; }
       const a = await ready;
-      if (t.closest('.maPlay')) {
-        if (!a.hasSong) pick.click();
-        else if (a.playing) a.stop();
-        else await a.play();
+      if (tr) {
+        if (tr.dataset.tr === 'play') await a.play();
+        else if (tr.dataset.tr === 'pause') a.pause();
+        else await a.restart();
         paint();
         return;
       }
+      if (t.closest('.maStop')) { a.stop(); paint(); return; }
       const S = a.settings;
       const col = t.closest('[data-col]');
       if (col) {
@@ -485,7 +506,7 @@ export function initMobile({
       const a = await ready;
       const first = !a.hasSong;
       a.load(f);
-      if (first && !a.playing) await a.play();   // the first song: straight into the show
+      if (first && !a.active) await a.play();   // the first song: straight into the show
       paint();
     });
     btn.addEventListener('click', async (e) => {
@@ -640,6 +661,7 @@ export function initMobile({
   };
   window.__fitLens = fitLens;
   fitLens();
+  autoShowUI();   // Auto show: in the app for everyone (it began in dev mode)
   fovIn?.addEventListener('input', () => fitLens());   // after the desktop's own handler has set it
 }
 

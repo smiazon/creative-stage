@@ -98,7 +98,7 @@ export function initAutoShow({ designer, setScreens, pa = null }) {
   audio.preload = 'auto';
   audio.playsInline = true;
   let ctx = null, analyser = null, freq = null, url = null, name = '';
-  let playing = false, onChange = () => {};
+  let playing = false, paused = false, onChange = () => {};   // playing: a show is on (paused or not)
   const ensureAudio = () => {
     if (ctx) return;
     // the PA's own context, so the song can go through it (dry while the PA is off)
@@ -243,6 +243,10 @@ export function initAutoShow({ designer, setScreens, pa = null }) {
     // the counting runs on the song's own clock, so a slow frame never loses a beat
     const at = audio.currentTime, adt = Math.max(0, Math.min(0.5, at - lastAt)); lastAt = at;
     analyser.getByteFrequencyData(freq);
+    if (paused) {   // paused: the show holds as it is, the screens settle; nothing is counted or changed
+      if (now - drawn > 33) { drawn = now; drawWall(0.033); drawRing(); wallTex.needsUpdate = true; ringTex.needsUpdate = true; }
+      return;
+    }
     const E = EN();
     A.low = band(35, 140); A.mid = band(300, 2000); A.high = band(5000, 14000);
 
@@ -454,24 +458,52 @@ export function initAutoShow({ designer, setScreens, pa = null }) {
 
   // --- play and stop -----------------------------------------------------------------------------------
   let before = null;   // the show that was on, back when it stops
+  // counting from scratch: a new effect straight away, the beat learnt again
+  function freshCount() {
+    effect = null; A.changedAt = 0; A.kicks = 0; A.peak = 0.25; A.midPeak = 0.2; A.highPeak = 0.1; A.tempoSent = -1;
+    A.songT = 0; A.gaps = []; A.beat = 0.5; A.beats = 0; A.lastKick = 0; A.eLong = 0.2; lastAt = audio.currentTime;
+  }
   async function play() {
     if (!url) return false;
     ensureAudio();
+    if (playing) {   // paused: carry on from where it was
+      if (!paused) return true;
+      try { await ctx.resume(); await audio.play(); } catch (_) { return false; }
+      paused = false; lastAt = audio.currentTime;
+      onChange();
+      return true;
+    }
     try { await ctx.resume(); await audio.play(); } catch (_) { return false; }
-    playing = true;
+    playing = true; paused = false;
     routePA();
     before = { show: designer.snapshot?.(), tempo: designer.tempo };
-    effect = null; A.changedAt = 0; A.kicks = 0; A.peak = 0.25; A.midPeak = 0.2; A.highPeak = 0.1; A.tempoSent = -1;
-    A.songT = 0; A.gaps = []; A.beat = 0.5; A.beats = 0; A.lastKick = 0; A.eLong = 0.2; lastAt = audio.currentTime;
+    freshCount();
     wg.fillStyle = '#000'; wg.fillRect(0, 0, wallC.width, wallC.height);
     setScreens?.({ wall: wallTex, b: ringTex });
     if (!raf) raf = requestAnimationFrame(frame);
     onChange();
     return true;
   }
+  // pause: the song holds and so does the show (the wristbands keep the effect they're on)
+  function pause() {
+    if (!playing || paused) return;
+    audio.pause();
+    paused = true;
+    onChange();
+  }
+  // back to the top of the song, playing
+  async function restart() {
+    if (!url) return false;
+    audio.currentTime = 0;
+    if (!playing) return play();
+    freshCount();
+    if (paused) return play();
+    onChange();
+    return true;
+  }
   function stop() {
     if (!playing) return;
-    playing = false;
+    playing = false; paused = false;
     clearTimeout(glintT);
     audio.pause();
     routePA();
@@ -484,7 +516,7 @@ export function initAutoShow({ designer, setScreens, pa = null }) {
   return {
     load(file) {
       if (!file) return;
-      const was = playing;
+      const was = playing && !paused;
       stop();
       if (url) URL.revokeObjectURL(url);
       url = URL.createObjectURL(file);
@@ -494,7 +526,7 @@ export function initAutoShow({ designer, setScreens, pa = null }) {
       onChange();
       if (was) play();   // a new song while one plays: straight on with it
     },
-    play, stop,
+    play, pause, restart, stop,
     // inside a tap: wake the sound up now (a phone only lets it start from a touch)
     prime() { ensureAudio(); ctx.resume?.().catch?.(() => {}); },
     // the guess at the music, for the card: beats a minute, the bar it's on, the bars this effect lasts
@@ -512,7 +544,9 @@ export function initAutoShow({ designer, setScreens, pa = null }) {
       if ('style' in patch || 'energy' in patch) change(now);
       else { pi = -1; nextScheme(); A.colourAt = now; apply(); }
     },
-    get playing() { return playing; },
+    get playing() { return playing && !paused; },   // the song is playing
+    get active() { return playing; },               // a show is on (playing or paused)
+    get paused() { return playing && paused; },
     get hasSong() { return !!url; },
     get name() { return name; },
     get time() { return audio.currentTime || 0; },
