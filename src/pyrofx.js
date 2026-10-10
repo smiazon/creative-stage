@@ -432,7 +432,7 @@ function makePoppers(customPoints) {
         // real confetti hangs: gravity almost fully cancelled by drag past the
         // crest, then a gentle ~0.4 m/s flutter descent
         p.y -= 1.5 * age * age * (1.0 - smoothstep(0.3, 1.0, age) * 0.75);
-        p.y -= 0.38 * fallT;
+        p.y -= 0.9 * fallT;   // falls faster (was 0.38 m/s)
         p.x += sin(age * 2.4 + aSeed) * (0.1 + fallT * 0.5);
         p.z += cos(age * 2.1 + aSeed * 1.7) * (0.1 + fallT * 0.5);
         p.y = max(p.y, 0.02);

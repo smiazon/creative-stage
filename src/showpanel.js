@@ -22,7 +22,7 @@
 // disclosure triangles, a HUD panel), drawn for a dark screen.
 import { makeMovable } from './windows.js';
 import { LOOK, WASH_FX, WASH_COLOURS, GROUP_ORDERS, GROUP_INNER, GROUP_SPLITS, GROUP_COLOURING, FLOOR_MODES, GROUP_FX, drawThumb } from './showlooks.js';
-import { MOTIONS, MOTION, GOBOS, setGoboScale } from './irheads.js';
+import { MOTIONS, MOTION, GOBOS, setGoboScale, setHeadCap } from './irheads.js';
 import { createFadeEditor } from './fadeeditor.js';
 
 const PREFS_KEY = 'ht-showpanel';
@@ -245,6 +245,8 @@ const GOBO_ICON = {
   cross: '<path d="M8 2.5h4v5.5h5.5v4H12v5.5H8V12H2.5V8H8z"/>',
 };
 // every slider runs 0..1 and maps onto what it sets
+// how many moving heads hang in this room (the Moving heads slider's top end; set at start)
+let HEADS = 24;
 const TUNE = {
   wspeed: { to: (v) => logMap(v, 0.35, 2.8), from: (s) => logUnmap(s, 0.35, 2.8), fmt: (s) => `${s.toFixed(1)}×` },
   wprob: { to: (v) => lin(v, 0.05, 1), from: (s) => linUnmap(s, 0.05, 1), fmt: (s) => `${Math.round(s * 100)}%` },
@@ -265,6 +267,8 @@ const TUNE = {
   espd: { to: (v) => v * 2, from: (s) => Math.min(1, Math.max(0, s / 2)), fmt: (s) => `${Math.round(s * 100)}%` },
   // MH gobo size: 30% to 300% of each effect's own beam
   mhsize: { to: (v) => lin(v, 0.3, 3), from: (s) => linUnmap(s, 0.3, 3), fmt: (s) => `${Math.round(s * 100)}%` },
+  // how many moving heads an effect may use: one, up to every head in the room
+  mhheads: { to: (v) => Math.round(lin(v, 1, HEADS)), from: (s) => linUnmap(s, 1, HEADS), fmt: (s) => (s >= HEADS ? `All ${HEADS}` : `${Math.round(s)}`) },
   pglow: { to: (v) => lin(v, 0.3, 2.5), from: (s) => linUnmap(s, 0.3, 2.5), fmt: (s) => `${Math.round(s * 100)}%` },
   bglow: { to: (v) => lin(v, 0.3, 2.5), from: (s) => linUnmap(s, 0.3, 2.5), fmt: (s) => `${Math.round(s * 100)}%` },
   psize: { to: (v) => lin(v, 0.2, 1.5), from: (s) => linUnmap(s, 0.2, 1.5), fmt: (s) => `${Math.round((s / 0.5) * 100)}%` },
@@ -297,6 +301,8 @@ export function initShowPanel({ designer, orbFX, controls, audience, room, ir, p
   if (!['wash', 'ir', 'group'].includes(prefs.kind)) prefs.kind = 'grid';
   ir?.setBeams(!!prefs.beams);   // the IR signal is invisible unless asked for
   setGoboScale(prefs.goboK || 1);   // the MH gobo size, as it was left
+  HEADS = Math.max(1, ir?.count || HEADS);
+  setHeadCap(prefs.headCap && prefs.headCap < HEADS ? prefs.headCap : 0);   // and how many heads, as left
   // "Use stage lights" and "Use venue speakers" start ON (asked for 2026-10-08),
   // and only work in a concert: anything else greys them out and leaves them idle
   if (!prefs.concertDefaults) { prefs.stageLights = true; prefs.recVenue = true; prefs.concertDefaults = 1; save(); }
@@ -372,6 +378,7 @@ export function initShowPanel({ designer, orbFX, controls, audience, room, ir, p
       <div class="spColRow"><div class="spSlots"></div><div class="spCombos"><button data-col="rainbow" class="spCombo spRainbowSw" title="Rainbow"></button>${[...designer.pairs.map(([a, b, n]) => [n, [a, b]]), ...COMBOS].map(([n, L], i) => `<button class="spCombo" data-combo="${i}" title="${n}" style="background:linear-gradient(90deg,${L.map((c, k) => `${c} ${(k / L.length) * 100}% ${((k + 1) / L.length) * 100}%`).join(',')})"></button>`).join('')}</div></div>
       <div class="spSpeedRow">${slider('espd', 'Speed of effect')}</div>
       <div class="spSpeedRow spGoboRow">${slider('mhsize', 'Gobo size')}</div>
+      <div class="spSpeedRow spGoboRow spHeadsRow">${slider('mhheads', 'Moving heads')}</div>
       <div class="spPane" data-pane="grid">
         <div class="spPresets">${designer.demoList.map((d) => `<button class="spPreset" data-demo="${d.id}"><canvas></canvas><span>${d.name}</span></button>`).join('')}</div>
         <div class="spEdit">${sec('colours', 'Colours', `<div class="spPairs">${designer.pairs.map(([a, b, n], i) => `<button data-pair="${i}" title="${n}" style="--a:${a};--b:${b}"></button>`).join('')}
@@ -507,6 +514,7 @@ export function initShowPanel({ designer, orbFX, controls, audience, room, ir, p
       <div class="spColRow"><div class="spSlots"></div><div class="spCombos"><button data-col="rainbow" class="spCombo spRainbowSw" title="Rainbow"></button>${[...designer.pairs.map(([a, b, n]) => [n, [a, b]]), ...COMBOS].map(([n, L], i) => `<button class="spCombo" data-combo="${i}" title="${n}" style="background:linear-gradient(90deg,${L.map((c, k) => `${c} ${(k / L.length) * 100}% ${((k + 1) / L.length) * 100}%`).join(',')})"></button>`).join('')}</div></div>
       <div class="spSpeedRow">${slider('espd', 'Speed of effect')}</div>
       <div class="spSpeedRow spGoboRow">${slider('mhsize', 'Gobo size')}</div>
+      <div class="spSpeedRow spGoboRow spHeadsRow">${slider('mhheads', 'Moving heads')}</div>
       <div class="vpPick">
         <div class="spPresets" data-vpane="grid">${designer.demoList.map((d) => vtile('grid', d.id, d.name)).join('')}</div>
         <div class="spPresets" data-vpane="wash">${vtile('grid', 'blackout', 'Blackout')}${UNIFY.map(([id, n]) => vtile('wash', id, n)).join('')}</div>
@@ -672,6 +680,7 @@ export function initShowPanel({ designer, orbFX, controls, audience, room, ir, p
       flevel: designer.level, ftime: prefs.fadeTime,
       sglow: glow ? glow.screen : 1, bloom: glow ? glow.bloom : 1,
       mhsize: prefs.goboK || 1,
+      mhheads: prefs.headCap && prefs.headCap < HEADS ? prefs.headCap : HEADS,
     };
     // the gobo slider is for moving heads: on the MH tab only
     for (const row of qa('.spGoboRow')) row.hidden = (row.closest('#videoPanel') ? prefs.vkind : prefs.kind) !== 'ir';
@@ -1272,6 +1281,7 @@ export function initShowPanel({ designer, orbFX, controls, audience, room, ir, p
     else if (k === 'pglow') audience.setPixelGlow?.(s);
     else if (MIXK[k]) { prefs.mix[MIXK[k]] = s; save(); venueSound?.setMix(prefs.mix); }
     else if (k === 'mhsize') { prefs.goboK = s; save(); setGoboScale(s); }
+    else if (k === 'mhheads') { prefs.headCap = s >= HEADS ? 0 : s; save(); setHeadCap(prefs.headCap); }
     else if (k === 'espd') {
       const kind = e.target.closest('#videoPanel') ? prefs.vkind : prefs.kind;
       prefs.spd[kind] = s;
@@ -1452,11 +1462,14 @@ export function initShowPanel({ designer, orbFX, controls, audience, room, ir, p
       const br = designer.brand;
       const floor = orbFX.groups.some((g, gi) => gi > 0 && g.n && visible(g));
       const key = `${br.a}|${br.b}|${(br.extra || []).join()}|${!!br.rainbow}|${floor}`;
+      // Your message shows its own words, colour and lettering, redrawn as they change
+      const T = designer.text || {}, tkey = `${key}|${T.str}|${T.font}|${T.a}|${T.b}`;
       for (const tl of tiles) {
         const r = tl.c.getBoundingClientRect();
         if (!seen(r)) continue;
         fit(tl.c, r, dpr);
-        if (!tl.player || tl.key !== key) { tl.player = preview(designer.previewZones(tl.id)); tl.key = key; }
+        const k = tl.id === 'message' ? tkey : key;
+        if (!tl.player || tl.key !== k) { tl.player = preview(designer.previewZones(tl.id)); tl.key = k; }
         tl.player.draw(tl.c.getContext('2d'), now / 1000, visible);
       }
     }

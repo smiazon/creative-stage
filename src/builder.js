@@ -334,6 +334,7 @@ export function initBuilder(api) {
   });
 
   function setOpen(o) {
+    if (open && !(o && enabled)) { page = null; render(); }   // closed: it opens on its first page (Setup) next time
     open = o && enabled;
     root.classList.toggle('open', open);
     fab.classList.toggle('active', open);

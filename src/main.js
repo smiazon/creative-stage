@@ -413,7 +413,10 @@ function applyState(rebake = true) {
   for (const l of houseLights) {
     const isEndRig = endRigs.includes(l);
     if (dark) {
-      l.visible = false;
+      // off by its brightness, never its visibility: hiding a light rebuilds every lit
+      // shader in the room, which is the pause the Venue lights switch used to make
+      l.visible = hockey ? l !== houseLights[4] : concert ? l === houseLights[4] : !isEndRig;
+      l.intensity = 0;
     } else if (house) {
       // house lights: every rig on, evenly — pregame / lights-up look
       // (boosted: the old values read dim and flat)
@@ -431,7 +434,8 @@ function applyState(rebake = true) {
   for (const w of bowlWashes) {
     const zoneLevel = lightCfg['wash' + w.userData.zone];
     w.intensity = w.userData.baseIntensity * (house ? 4.4 : concert ? 0.3 : 0.5) * zoneLevel;
-    w.visible = !dark && zoneLevel > 0.01;
+    w.visible = zoneLevel > 0.01;
+    if (dark) w.intensity = 0;   // dark by brightness (see the house lights above)
     w.color.setHex(house ? 0xcfc9bc : 0x8a7a5a);
   }
   // ambient world response: with the house up, the room itself brightens
@@ -504,7 +508,8 @@ function applyState(rebake = true) {
 // change of cue, never per frame.
 let rigLightsOn = null, rigTrackers = 2;
 function syncRigLights() {
-  const want = currentMode === 'concert' && lighting === 'game' && (rigFX.look !== 'blackout' || !!rigFX.uv);
+  // the room's blackout leaves the rig as it is: switching the venue lights must not rebuild shaders
+  const want = currentMode === 'concert' && (lighting === 'game' || lighting === 'blackout') && (rigFX.look !== 'blackout' || !!rigFX.uv);
   if (want === rigLightsOn) return;
   rigLightsOn = want;
   for (const l of showLights) l.visible = want;
@@ -660,7 +665,7 @@ function hazeTick() {
 }
 {
   // every visit starts in a full room of haze (100%); the slider changes it from there
-  setArenaHaze(1, false);
+  setArenaHaze(MOBILE ? 1.5 : 1, false);   // the phone starts at 150%: an atmospheric room
   hazeRange?.addEventListener('input', (e) => { e.stopPropagation(); setArenaHaze(e.target.value); });
   hazeRange?.addEventListener('click', (e) => e.stopPropagation());
   hazeRange?.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -867,6 +872,21 @@ function exportBirdPNG({ width = 2048, orbsOnly = true, download = true } = {}) 
   return { url, width, height };
 }
 
+// The map from above draws without fog, which needs shader variants the room
+// never uses. Built the first time the map opened, they made it hang; built once,
+// quietly, after loading, it opens at once.
+function warmBirdView() {
+  const fog = scene.fog, mask = birdCam.layers.mask;
+  scene.fog = null;
+  try {
+    for (const m of [1 << 2, 1 | (1 << 2)]) {   // the lights only, then the whole arena with them
+      birdCam.layers.mask = m;
+      if (renderer.compileAsync) renderer.compileAsync(scene, birdCam).catch(() => {}); else renderer.compile(scene, birdCam);
+    }
+  } catch (_) { /* a renderer without it: the first open builds them */ }
+  scene.fog = fog;
+  birdCam.layers.mask = mask;
+}
 function renderBirdView() {
   const rect = birdViewEl.getBoundingClientRect();
   if (rect.width < 4) return;
@@ -882,8 +902,11 @@ function renderBirdView() {
     scene.background = birdBlack;
     birdCam.layers.set(2);      // orbs only
   } else {
-    birdCam.layers.mask = 1;    // world without layer-3 overhead
-    renderer.toneMappingExposure = 0.72; // stacked speculars blow out from straight above
+    // the world without the layer-3 overhead, and the wristbands with it (the arena and its show)
+    birdCam.layers.mask = 1 | (1 << 2);
+    // stacked speculars blow out from straight above in a lit room; a show-lit room is dark,
+    // so the map lifts it until the bowl reads
+    renderer.toneMappingExposure = lighting === 'house' ? 0.72 : lighting === 'blackout' ? 2.2 : 3.0;
   }
   // orbs are sub-pixel at map scale — inflate them just for this pass
   const k = birdMode === 'orbs' ? 3.6 : 2.4;
@@ -920,6 +943,170 @@ const fasciaVideoTex = new THREE.VideoTexture(orbFX.video);
 fasciaVideoTex.colorSpace = THREE.SRGBColorSpace;
 fasciaVideoTex.wrapS = THREE.RepeatWrapping;
 fasciaVideoTex.repeat.set(bowl.fascias[0].tiles || 5, 1);
+// The phone's screens, sharper:
+// - the stage wall: the 640x360 film upscaled on the GPU into a 1280x720 picture
+//   (Catmull-Rom filtering and a light sharpen), not stretched by plain bilinear
+// - the B-stage: its own live visuals in HD, a slow flowing texture (warped
+//   noise, ripples, a fine grain) coloured by the stage lights, which follow the
+//   wristbands' colours
+if (MOBILE) {   // the phone's sharper screens, once everything below exists, and again whenever the film starts
+  setTimeout(() => applyVideoRoute(), 0);
+  for (const ev of ['loadeddata', 'playing']) orbFX.video?.addEventListener(ev, () => applyVideoRoute());
+}
+var autoScreens = null;   // Auto Show's visualizers on the screens, while it plays (dev mode)
+var screensHD = MOBILE ? (() => {   // (var: the video routing can run before this line on the first frames)
+  const quad = (frag, uniforms) => {
+    const mat = new THREE.ShaderMaterial({ uniforms, depthTest: false, depthWrite: false, toneMapped: false,
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: frag });
+    const sc = new THREE.Scene();
+    sc.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
+    return { sc, mat };
+  };
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  // the stage film, upscaled
+  const filmRT = new THREE.WebGLRenderTarget(1280, 720);
+  filmRT.texture.wrapS = THREE.RepeatWrapping;
+  const film = quad(/* glsl */`
+    uniform sampler2D uSrc; uniform vec2 uTexel; varying vec2 vUv;
+    vec4 cubic(float v) {
+      vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v; vec4 s = n * n * n;
+      float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x, w = 6.0 - x - y - z;
+      return vec4(x, y, z, w) * (1.0 / 6.0);
+    }
+    vec3 bicubic(vec2 uv) {   // 4 bilinear taps make a 16-tap cubic: smooth, no blocky texels
+      vec2 px = uv / uTexel - 0.5, f = fract(px); px -= f;
+      vec4 xc = cubic(f.x), yc = cubic(f.y);
+      vec4 c = px.xxyy + vec2(-0.5, 1.5).xyxy, s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
+      vec4 o = (c + vec4(xc.yw, yc.yw) / s) * uTexel.xxyy;
+      float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
+      return mix(mix(texture2D(uSrc, o.yw).rgb, texture2D(uSrc, o.xw).rgb, sx), mix(texture2D(uSrc, o.yz).rgb, texture2D(uSrc, o.xz).rgb, sx), sy);
+    }
+    void main() {
+      vec3 c = bicubic(vUv);
+      vec3 blur = (texture2D(uSrc, vUv + vec2(uTexel.x, 0.0)).rgb + texture2D(uSrc, vUv - vec2(uTexel.x, 0.0)).rgb
+                 + texture2D(uSrc, vUv + vec2(0.0, uTexel.y)).rgb + texture2D(uSrc, vUv - vec2(0.0, uTexel.y)).rgb) * 0.25;
+      gl_FragColor = vec4(max(c + (c - blur) * 0.55, 0.0), 1.0);   // a light unsharp mask
+    }`, { uSrc: { value: wallVideoTex }, uTexel: { value: new THREE.Vector2(1 / 640, 1 / 360) } });
+  // the B-stage's live visuals
+  const flowRT = new THREE.WebGLRenderTarget(1024, 1024);
+  const flow = quad(/* glsl */`
+    uniform float uT; uniform vec3 uA; uniform vec3 uB; varying vec2 vUv;
+    float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+    float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * n(p); p = p * 2.03 + 11.7; a *= 0.5; } return v; }
+    void main() {
+      vec2 p = (vUv - 0.5) * 2.0;
+      float r = length(p), ang = atan(p.y, p.x);
+      vec2 q = vec2(fbm(p * 1.6 + uT * 0.06), fbm(p * 1.6 - uT * 0.05 + 4.2));
+      float w = fbm(p * 2.2 + q * 2.4 + uT * 0.08);                       // the slow warped flow
+      float rings = 0.5 + 0.5 * sin(r * 22.0 - uT * 1.4 + w * 6.0);       // ripples out from the centre
+      float rays = 0.5 + 0.5 * sin(ang * 8.0 + w * 5.0 + uT * 0.3);      // a soft kaleidoscope turn
+      float grain = n(vUv * 420.0 + uT * 3.0);                            // a fine texture, sharp up close
+      float k = smoothstep(0.25, 0.9, w * 0.9 + rings * 0.35 + rays * 0.15);
+      vec3 col = mix(uB * 0.25, uA, k) + uB * pow(rings, 6.0) * 0.6;
+      col *= 0.82 + 0.18 * grain;
+      col *= smoothstep(1.02, 0.86, r) * (0.55 + 0.45 * smoothstep(0.0, 0.35, r)) + 0.12;
+      gl_FragColor = vec4(col, 1.0);
+    }`, { uT: { value: 0 }, uA: { value: new THREE.Color() }, uB: { value: new THREE.Color() } });
+  let frame = 0;
+  const draw = (q, rt) => { renderer.setRenderTarget(rt); renderer.render(q.sc, cam); };
+  return {
+    film: filmRT.texture, flow: flowRT.texture,
+    render(t) {
+      if (exporting || ++frame % 2) return;
+      const v = orbFX.video;
+      if (v && v.videoWidth) film.mat.uniforms.uTexel.value.set(1 / v.videoWidth, 1 / v.videoHeight);
+      flow.mat.uniforms.uT.value = t;
+      flow.mat.uniforms.uA.value.copy(rigFX.colorA);   // the stage lights' colours, which follow the wristbands
+      flow.mat.uniforms.uB.value.copy(rigFX.colorB);
+      draw(film, filmRT);
+      draw(flow, flowRT);
+      renderer.setRenderTarget(null);
+    },
+  };
+})() : null;
+
+// The phone's jumbotron is the show's own camera feed, as at a real concert: a
+// small picture of the room from a second camera, cutting between random angles,
+// each held almost still with a very slow drift. Drawn small and every third frame.
+const jumboFeed = MOBILE ? (() => {
+  const rt = new THREE.WebGLRenderTarget(480, 270, { samples: 0 });
+  rt.texture.wrapS = THREE.RepeatWrapping;
+  const cam = new THREE.PerspectiveCamera(50, 16 / 9, 0.3, SPEC.cameraFar || 600);
+  const look = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: 50 };
+  let cuts = null, cut = null, t0 = 0, p0 = 0, frame = 0;
+  const HOLD = 7;   // seconds on each angle
+  // the screen underneath: one wide panorama round the whole band (about 16:1), from
+  // the room's high, wide views, a very slow pan; its join faces the main stage
+  const wideRT = new THREE.WebGLRenderTarget(2048, 128, { samples: 0 });
+  const wideCam = new THREE.PerspectiveCamera(10, jumboMesh.bellyAspect || 16, 0.3, SPEC.cameraFar || 600);
+  const WIDE = /high|upper|rafter|across|overhead|corner|club/i;
+  let wideAt = -1e9, wideFrom = null, wideYaw = 0;
+  const wideDeal = () => {
+    const pool = ANGLES.map((a, i) => i).filter((i) => !ANGLES[i].skip && WIDE.test(ANGLES[i].name || ''));
+    const i = pool.length ? pool[(Math.random() * pool.length) | 0] : 0;
+    const b0 = ANGLES[i], b = b0.pose ? { ...b0, ...b0.pose() } : b0;
+    const a = currentMode === 'concert' && b.concert ? b.concert : b;
+    const v = (x) => (x?.isVector3 ? x.clone() : new THREE.Vector3().fromArray(x));
+    wideFrom = { pos: v(a.pos), look: v(a.look) };
+    wideYaw = (Math.random() < 0.5 ? -1 : 1) * 0.12;
+    wideAt = performance.now();
+    jumboMesh.setBellyFeed?.(wideRT.texture, seam());   // the join faces the stage (it may have moved)
+  };
+  const seam = () => {   // the main stage, as seen from the board: where the band's picture starts and ends
+    const P = stagePoint(), J = jumboMesh.position;
+    return { x: P.x - J.x, z: P.z - J.z };
+  };
+  const renderWide = () => {
+    if (!wideFrom || performance.now() - wideAt > 11000) wideDeal();
+    const k = (performance.now() - wideAt) / 11000, yaw = wideYaw * (k - 0.5);   // a slow pan across the hold
+    const d = wideFrom.look.clone().sub(wideFrom.pos);
+    d.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    wideCam.position.copy(wideFrom.pos);
+    wideCam.lookAt(wideFrom.pos.clone().add(d));
+    wideCam.layers.mask = camera.layers.mask;
+    renderer.setRenderTarget(wideRT);
+    renderer.render(scene, wideCam);
+  };
+  const deal = () => {
+    if (!cuts || Math.random() < 0.12) cuts = makeTour(240, null, { seed: (Math.random() * 1e9) | 0 }).cuts;
+    let next;
+    do { next = cuts[(Math.random() * cuts.length) | 0]; } while (cuts.length > 1 && next === cut);
+    cut = next; t0 = performance.now(); p0 = 0.15 + Math.random() * 0.5;
+  };
+  jumboMesh.setVideo?.(rt.texture);
+  return {
+    render() {
+      if (exporting) return;
+      frame++;
+      // the inside screens glow in the LED ribbons' colour (the show's colour, as it changes)
+      jumboMesh.setInnerColor?.(fasciaFX.mode !== 'off' ? fasciaFX.colorA : rigFX.colorA);
+      if (frame % 4 === 2) {   // the panorama underneath, on its own beat
+        const was = jumboMesh.visible;
+        jumboMesh.visible = false;
+        renderWide();
+        renderer.setRenderTarget(null);
+        jumboMesh.visible = was;
+        return;
+      }
+      if (frame % 4) return;
+      if (!cut || performance.now() - t0 > HOLD * 1000) deal();
+      const k = (performance.now() - t0) / (HOLD * 1000);
+      try { cut.shot.at(Math.min(1, p0 + k * 0.12), look); } catch (_) { deal(); return; }   // a slow drift through a little of the shot
+      cam.position.copy(look.pos);
+      cam.lookAt(look.look);
+      if (cam.fov !== look.fov) { cam.fov = look.fov; cam.updateProjectionMatrix(); }
+      cam.layers.mask = camera.layers.mask;
+      const was = jumboMesh.visible;
+      jumboMesh.visible = false;   // never filming itself (a screen can't show what it's drawn into)
+      renderer.setRenderTarget(rt);
+      renderer.render(scene, cam);
+      renderer.setRenderTarget(null);
+      jumboMesh.visible = was;
+    },
+  };
+})() : null;
 // projection overlays sit a hair above the playing surfaces
 function roundedShape(w, h, r) {
   const s = new THREE.Shape();
@@ -1032,6 +1219,15 @@ function applyVideoRoute() {
   showRig.wallMat.map = screensOff ? blackTex : screensOn ? tex : showRig.idleTex;
   showRig.wallMat.needsUpdate = true;
   bstageFX.contentMap = screensOff ? blackTex : screensOn ? tex : stage.bIdleTex;
+  if (screensHD && !screensOff) {   // the phone: the sharper film on the wall, live visuals on the B-stage
+    if (screensOn && tex === wallVideoTex) showRig.wallMat.map = screensHD.film;
+    bstageFX.contentMap = screensHD.flow;
+  }
+  if (autoScreens && !screensOff) {   // Auto Show (dev): its visualizers own both screens while it plays
+    showRig.wallMat.map = autoScreens.wall;
+    showRig.wallMat.needsUpdate = true;
+    bstageFX.contentMap = autoScreens.b;
+  }
   fasciaFX.videoTex = screensOn ? feed.fascia : null;
   if (fasciaFX.mode === 'video') fasciaFX.set({});
   // orbs sample the camera pipeline's output, else the generated visuals, else the file video
@@ -3097,7 +3293,7 @@ function fitView(force = false) {
   const [w, h] = viewSize();
   if (!force && w === fitW && h === fitH) return;
   fitW = w; fitH = h;
-  window.__fitLens?.(w, h);   // the phone's lens: wider when held upright (mobile.js)
+  if (!focus) window.__fitLens?.(w, h);   // the phone's lens: wider when held upright (mobile.js); focus mode keeps its own
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
@@ -3524,7 +3720,7 @@ function animate() {
   // the head owns the camera in VR; PointerLockControls never engages there
   if (vrView.stereoOn) vrPhone.update(camera, vrView.baseYaw);
   pollGamepad(dt);
-  if (tour) stepTour(); else updateMovement(dt);
+  if (tour) stepTour(); else if (focus) stepFocus(); else updateMovement(dt);
   if (scene.fog?.isFogExp2) {
     const k = Math.min(1, Math.max(0, (camera.position.y - TOP_Y_BOWL * 0.6) / Math.max(10, TOP_Y_BOWL * 1.4)));
     scene.fog.density = fogBase * (1 - 0.84 * k * k * (3 - 2 * k));
@@ -3632,9 +3828,9 @@ function animate() {
   // does not have. Tone mapping still applies (set on the renderer).
   if (vrView.stereoOn) stereo.render(scene, camera);
   else if (renderer.xr.isPresenting) renderer.render(scene, camera);
-  else { if (hazePass.enabled) hazeTick(); composer.render(); }
+  else { if (hazePass.enabled) hazeTick(); screensHD?.render(performance.now() / 1000); jumboFeed?.render(); composer.render(); }
   // the loading screen lifts once the room's materials are ready and a few frames are on screen
-  if (bootFrames > 0 && bootReady && bootMenu && --bootFrames === 0) window.__boot?.done();
+  if (bootFrames > 0 && bootReady && bootMenu && --bootFrames === 0) { window.__boot?.done(); setTimeout(warmBirdView, 600); }
   // a recording takes the frame now, while the WebGL buffer can still be read
   if (exportFrame) exportFrame();
   if (birdMode !== 'off' && !renderer.xr.isPresenting && !vrView.stereoOn) renderBirdView();
@@ -4271,6 +4467,44 @@ function stepTour() {
   camera.position.copy(_cam.pos);
   camera.lookAt(_cam.look);
   if (camera.fov !== _cam.fov) { camera.fov = _cam.fov; camera.updateProjectionMatrix(); }
+}
+// FOCUS MODE (the phone's star button): the recording's cinematic shots, played
+// live and slower, for as long as you watch, a new plan dealt when one runs out.
+// Stopping leaves the camera where the shot was and eases the lens back.
+let focus = null;
+const focusPlan = () => ({ ...makeTour(240, null, { seed: (Math.random() * 1e9) | 0 }), t0: performance.now(), slow: 0.62 });
+function startFocus() {
+  if (focus || tour || exporting) return false;
+  controls.unlock?.();
+  for (const k in keys) keys[k] = false;
+  focus = focusPlan();
+  return true;
+}
+function stepFocus() {
+  let t = ((performance.now() - focus.t0) / 1000) * focus.slow;
+  if (t >= focus.showLen - 0.05) { focus = focusPlan(); t = 0; }
+  const cut = focus.cuts.find((q) => t < q.t1) || focus.cuts[focus.cuts.length - 1];
+  cut.shot.at(Math.min(1, Math.max(0, (t - cut.t0) / (cut.t1 - cut.t0))), _cam);
+  camera.position.copy(_cam.pos);
+  camera.lookAt(_cam.look);
+  if (Math.abs(camera.fov - _cam.fov) > 0.01) { camera.fov = _cam.fov; camera.updateProjectionMatrix(); }
+}
+function stopFocus() {
+  if (!focus) return;
+  focus = null;
+  flying = true; velY = 0; grounded = false;   // stay right where the shot left you
+  const from = camera.fov;
+  if (window.__fitLens) window.__fitLens(window.innerWidth, window.innerHeight); else camera.fov = userFov;
+  const to = camera.fov, t0 = performance.now();
+  camera.fov = from; camera.updateProjectionMatrix();
+  const ease = () => {
+    if (focus) return;
+    const k = Math.min(1, (performance.now() - t0) / 900), e = 1 - (1 - k) ** 3;
+    camera.fov = from + (to - from) * e;
+    camera.updateProjectionMatrix();
+    if (k < 1) requestAnimationFrame(ease);
+  };
+  requestAnimationFrame(ease);
 }
 // the camera plan for a recording with `showLen` seconds of show
 function makeTour(showLen, pullAt, opts = {}) {
@@ -4942,7 +5176,7 @@ function sampleShowColour() {
 }
 const showTintB = new THREE.Color(1, 0.82, 0.58);
 let tintTargetB = WARM, showOn = false;
-const CAT_RED = new THREE.Color(0xff2412);
+const CAT_RED = new THREE.Color(0xff2412), BLACK = new THREE.Color(0, 0, 0);
 // Make a video → Use stage lights: in a concert the rig takes the bands'
 // colours and their pace, calmer and dimmer than its own looks, no lasers
 const stageFollow = { on: false, saved: null, vibe: '', vibeAt: -1 };
@@ -4980,12 +5214,15 @@ function followShow(dt, now) {
   const leds = fasciaFX.mode === 'show';
   const concert = currentMode === 'concert';
   const rig = stageFollow.on && concert;
+  // BLACKOUT (the first tile of every Show tab): everything that follows the show goes dark
+  // with the bands (the stage lights, the ribbons, the screens and rims that take their colour)
+  const black = orbFX.mode === 'design' && showUI.demo === 'blackout';
   if (now - tintAt > 0.12 || now < tintAt) {
     tintAt = now;
-    const c = orbFX.mode !== 'off' ? sampleShowColour() : null;
+    const c = !black && orbFX.mode !== 'off' ? sampleShowColour() : null;
     showOn = !!c;
-    tintTarget = c || WARM;
-    tintTargetB = c ? _tintB : WARM;
+    tintTarget = black ? BLACK : c || WARM;
+    tintTargetB = black ? BLACK : c ? _tintB : WARM;
   }
   const k = Math.min(1, dt * 5);
   showTint.lerp(tintTarget, k);
@@ -4995,10 +5232,10 @@ function followShow(dt, now) {
   // the catwalk's rope light and the B-stage's rim follow the bands, always
   if (concert && bstageFX.cat) {
     bstageFX.catMode = 'solid';
-    bstageFX.catColor.copy(showOn ? showTint : CAT_RED);
+    bstageFX.catColor.copy(showOn || black ? showTint : CAT_RED);
   }
   if (concert) {
-    if (showOn) {
+    if (showOn || black) {
       if (!bstageFX._rimOwn) bstageFX._rimOwn = { mode: bstageFX.ringMode, color: bstageFX.ringColor };
       bstageFX.ringMode = 'solid';
       bstageFX.ringColor = (bstageFX.ringColor && bstageFX.ringColor !== bstageFX._rimOwn.color) ? bstageFX.ringColor : new THREE.Color();
@@ -5019,10 +5256,27 @@ function followShow(dt, now) {
     rigFX.colorA.copy(showTint);
     rigFX.colorB.copy(showTintB);
     // calmer than the rig's own looks: dimmer, darker with the bands, and no lasers
-    rigFX.master = showOn ? 0.18 + 0.14 * Math.min(1, showLift * 1.5) : 0.14;   // gentle: well under the rig's own looks
-    rigFX.lasersOn = false; rigFX.strobeOn = false; rigFX.blindersOn = false;
+    rigFX.master = black ? Math.max(0, rigFX.master - dt * 1.2) : showOn ? 0.18 + 0.14 * Math.min(1, showLift * 1.5) : 0.14;   // gentle: well under the rig's own looks
+    // the phone's FX tray can fire every laser, bright, over the calm show
+    const lt = performance.now(), ldt = Math.min(0.1, (lt - (fxLaserAt || lt)) / 1000);
+    fxLaserAt = lt;
+    fxLaserK += ((fxLasers ? 1 : 0) - fxLaserK) * Math.min(1, ldt * (fxLasers ? 8 : 2.6));   // quick in, a soft fade out
+    if (fxLaserK < 0.01) fxLaserK = 0;
+    rigFX.lasersOn = fxLaserK > 0; rigFX.gain.laser = fxLaserK > 0 ? 3.2 * fxLaserK : 1;
+    rigFX.strobeOn = false; rigFX.blindersOn = false;
+  }
+  // the stage lights black out too, whatever look they run, and come back as they were
+  if (black && concert) {
+    if (!blackRig) blackRig = { master: rigFX.master };
+    rigFX.master *= Math.max(0, 1 - k * 1.5);
+    if (rigFX.master < 0.004) rigFX.master = 0;
+  } else if (blackRig) {
+    if (!rig) rigFX.master = blackRig.master;   // (following the show, the line above sets it)
+    blackRig = null;
   }
 }
+var fxLasers = false, fxLaserK = 0, fxLaserAt = 0;   // (var: followShow runs before this line on the first frames)
+var blackRig = null;   // the stage lights' level before a Blackout
 // --- the venue's speakers, live -----------------------------------------------------
 // Make a video → "Use venue speakers for music": the song plays from the PA's
 // stacks (audiofx.js: placed round the stage, heard from wherever the camera
@@ -5117,7 +5371,8 @@ window.__dbg.venueSound = venueSound;
 // Settings and that plays instead.
 {
   const small = document.createElement('canvas');
-  small.width = 192; small.height = 108;
+  // the phone draws it finer, with a lighter glow: crisp on the big screen, not a soft blur
+  small.width = MOBILE ? 384 : 192; small.height = MOBILE ? 216 : 108;
   const sctx = small.getContext('2d');
   let player = null, key = '', keyAt = -1, drawnAt = -1;
   vPresets.addPreset('show', (ctx, t, dt, W, H) => {
@@ -5138,17 +5393,21 @@ window.__dbg.venueSound = venueSound;
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(small, 0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.filter = 'blur(8px)';
+    ctx.filter = MOBILE ? 'blur(5px)' : 'blur(8px)';
+    if (MOBILE) ctx.globalAlpha = 0.55;
     ctx.drawImage(small, 0, 0, W, H);
+    ctx.globalAlpha = 1;
     ctx.filter = 'none';
     ctx.globalCompositeOperation = 'source-over';
   });
   if (!screenVideoFile) document.querySelector('[data-vpreset="show"]')?.click();
 }
 
-// the room's extras start off: no banners, no VIP lights, no LED ribbons
-fasciaFX.set({ mode: 'off' });
-document.querySelectorAll('[data-fascia]').forEach((b) => b.classList.toggle('active', b.dataset.fascia === 'off'));
+// the room's extras start off: no banners, no VIP lights, no LED ribbons. On the
+// phone the LED ribbons start on, in the show's colour: the room looks alive at once
+const fasciaStart = MOBILE && bowl.fascias?.length ? 'show' : 'off';
+fasciaFX.set({ mode: fasciaStart });
+document.querySelectorAll('[data-fascia]').forEach((b) => b.classList.toggle('active', b.dataset.fascia === fasciaStart));
 if (ceiling?.banners) { ceiling.banners.visible = false; document.getElementById('bannersBtn')?.classList.remove('active'); }
 if (suiteSwitch?.classList.contains('active')) suiteSwitch.click();
 
@@ -5459,7 +5718,7 @@ function applyAppMode(mode, { entering = false } = {}) {
   const quick = mode === 'quick';
   document.body.classList.toggle('mode-quick', quick);
   document.body.classList.toggle('mode-studio', !quick);
-  if (switchModeBtn) switchModeBtn.innerHTML = `&#8644; Switch to ${quick ? 'Show Studio' : 'Quick Showcase'}${quick ? `<span class="mdLock">${menuUI.lockIcon}</span>` : ''}`;
+  if (switchModeBtn) switchModeBtn.innerHTML = `<svg class="setIco" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg>Switch to ${quick ? 'Show Studio' : 'Quick Showcase'}${quick ? `<span class="mdLock">${menuUI.lockIcon}</span>` : ''}`;
   if (quick) {
     if (directorUI.open) directorUI.toggle(false);
     consoleUI.toggle(false);
@@ -5470,7 +5729,7 @@ function applyAppMode(mode, { entering = false } = {}) {
     if (!directorUI.open) directorUI.toggle(true);
   }
   // a welcome: the stage cannons throw confetti as you walk in
-  if (entering) setTimeout(() => rigFX.fireConfetti(), 500);
+  if (entering && !MOBILE) setTimeout(() => rigFX.fireConfetti(), 500);   // not on the phone: the room just opens
 }
 // the helper's cards: the first time into the room, and the ? in the header
 // every window closed: the tutorial starts on a clear screen
@@ -5590,7 +5849,7 @@ document.getElementById('mmTutorial')?.addEventListener('click', (e) => { e.stop
 {
   const how = document.createElement('button');
   how.id = 'tutorialBtn';
-  how.innerHTML = '&#10067; Show me how';
+  how.innerHTML = '<svg class="setIco" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg>Show me how';
   how.addEventListener('click', (e) => { e.stopPropagation(); tips.start(); });
   document.getElementById('settingsPanel')?.insertBefore(how, document.getElementById('snapBtn'));
   // keyboard shortcuts: off unless wanted
@@ -5625,7 +5884,7 @@ new MutationObserver(() => { if (document.body.classList.contains('menu')) tips.
     hint.classList.toggle('on', inRoom && !shownOnce && !tips.open);
   }, 400);
 }
-menuUI.onEnter = (mode) => { applyAppMode(mode, { entering: true }); if (!RENDER_JOB && !MOBILE) tips.firstTime(); };
+menuUI.onEnter = (mode) => { applyAppMode(mode, { entering: true }); if (!RENDER_JOB && !MOBILE) tips.firstTime(); setTimeout(warmBirdView, 1500); };   // the room is built now: ready its map
 applyAppMode(menuUI.mode);
 switchModeBtn?.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -5832,5 +6091,23 @@ if (RENDER_JOB) {
 
 // --- the phone and tablet showcase ---------------------------------------------------------
 if (MOBILE) {
-  import('./mobile.js').then((m) => m.initMobile({ camera, view: renderer.domElement, controls, nextAngle, touchMove, menuUI, overlay, closeAll: closeAllWindows, toggleFly, isFlying: () => flying, keys }));
+  import('./mobile.js').then((m) => m.initMobile({ camera, view: renderer.domElement, controls, nextAngle, touchMove, menuUI, overlay, closeAll: closeAllWindows, toggleFly, isFlying: () => flying, keys, designer: showUI,
+    focus: { start: startFocus, stop: stopFocus, get on() { return !!focus; } },
+    setScreens: (t) => { autoScreens = t; applyVideoRoute(); },   // Auto Show (dev) takes the screens, or gives them back
+    // the arena PA (audiofx.js): Auto Show's song can play from its speaker stacks, in the room's acoustics
+    pa: { context: () => audioFX.getContext(), attach: (node) => audioFX.attachNode(node), get on() { return venueSound.on; }, set: (v) => venueSound.set(v) },
+    bird: { set: setBirdMode, get mode() { return birdMode; } },
+    fx: {
+      fireworks: IS_STADIUM ? () => fireworksFX.fire() : null,
+      finale: () => { if (IS_STADIUM) fireworksFX.fireFinale(); pyroFX.firePyro?.(); rigFX.fireConfetti(); pyroFX.fireStreamers?.(); smokeFX.fireJets?.(); arenaFX.firePoppers?.(); },
+      fire: (on) => { pyroFX.setFlames?.(on); if (on) pyroFX.firePyro?.(); },
+      isFire: () => !!pyroFX.state?.flames,
+      pyro: () => pyroFX.firePyro?.(),
+      confetti: () => rigFX.fireConfetti(),
+      streamers: () => pyroFX.fireStreamers?.(),
+      poppers: () => { pyroFX.firePoppers?.(); arenaFX.firePoppers?.(); },
+      smoke: () => smokeFX.fireJets?.(),
+      lasers: (on) => { fxLasers = !!on; },
+      isLasers: () => fxLasers,
+    } }));
 }

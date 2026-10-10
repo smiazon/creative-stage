@@ -9,7 +9,8 @@
 // per-frame state is a small fixed-size particle array (embers, starfield).
 import * as THREE from 'three';
 
-const W = 512, H = 288;
+// the phone draws only the show's own picture here, so it can afford it sharper
+const W = window.PIXMOB_MOBILE ? 1024 : 512, H = window.PIXMOB_MOBILE ? 576 : 288;
 const TAU = Math.PI * 2;
 
 function makeCanvas(w, h) {

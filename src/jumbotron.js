@@ -209,11 +209,15 @@ function makeCrownText() {
 }
 
 // the screen material: scrolling streaks with a panel texture over them
-function screenMaterial(streaks, panels, repeat) {
+function screenMaterial(streaks, panels, repeat, videoRepeat = repeat) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uStreaks: { value: streaks }, uPanels: { value: panels },
       uTime: { value: 0 }, uRepeat: { value: repeat }, uLevel: { value: GLOW },
+      // a real film instead of the board's graphics (setVideo): one 16:9 frame per stretch of screen
+      uVideo: { value: null }, uUseVideo: { value: 0 }, uVRepeat: { value: videoRepeat }, uVOff: { value: 0 },
+      // a plain glow in one colour (the inside screens, in the LED ribbons' colour)
+      uSolid: { value: new THREE.Color(1, 1, 1) }, uUseSolid: { value: 0 },
     },
     vertexShader: /* glsl */`
       varying vec2 vUv;
@@ -224,11 +228,20 @@ function screenMaterial(streaks, panels, repeat) {
       uniform float uTime;
       uniform float uRepeat;
       uniform float uLevel;
+      uniform sampler2D uVideo;
+      uniform float uUseVideo;
+      uniform float uVRepeat;
+      uniform float uVOff;
+      uniform vec3 uSolid;
+      uniform float uUseSolid;
       varying vec2 vUv;
       void main() {
         vec3 bg = texture2D(uStreaks, vec2(vUv.x * uRepeat - uTime * 0.045, vUv.y)).rgb;
         vec4 p = texture2D(uPanels, vUv);
-        gl_FragColor = vec4(mix(bg, p.rgb, p.a) * uLevel, 1.0);
+        vec3 col = mix(bg, p.rgb, p.a);
+        if (uUseVideo > 0.5) col = texture2D(uVideo, vec2(fract(vUv.x * uVRepeat + uVOff), vUv.y)).rgb;
+        if (uUseSolid > 0.5) col = uSolid * (0.78 + 0.22 * dot(bg, vec3(0.33)));   // the colour, with the streaks faintly through it
+        gl_FragColor = vec4(col * uLevel, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -245,8 +258,9 @@ export function buildJumbotron(scene, scoreTex) {
   const streaks = makeStreaks();
   const outerPanels = makePanels(false), innerPanels = makePanels(true);
   const repeatFor = (a, b, r, h) => Math.max(1, Math.round(perimeter(a, b, r) / h / 4));
-  const outerMat = screenMaterial(streaks, outerPanels.texture, repeatFor(A, B, R, H));
-  const innerMat = screenMaterial(streaks, innerPanels.texture, repeatFor(A - T, B - T, R - T, H));
+  const filmsFor = (a, b, r, h) => Math.max(1, Math.round(perimeter(a, b, r) / (h * 16 / 9)));   // 16:9 frames round the band
+  const outerMat = screenMaterial(streaks, outerPanels.texture, repeatFor(A, B, R, H), filmsFor(A, B, R, H));
+  const innerMat = screenMaterial(streaks, innerPanels.texture, repeatFor(A - T, B - T, R - T, H), filmsFor(A - T, B - T, R - T, H));
 
   // the main board: screens outside, screens inside, a housing ring between
   add(band(A, B, R, -H / 2, H / 2, false), outerMat);
@@ -320,6 +334,32 @@ export function buildJumbotron(scene, scoreTex) {
     crownMat.color.setScalar(on ? 1.15 * level : 0);
   };
   grp.setScreens = (v) => { on = !!v; show(); };
+  // the outside screens play a film (a texture), or go back to the board's own graphics (null)
+  grp.setVideo = (tex) => {
+    for (const m of [outerMat]) { m.uniforms.uVideo.value = tex || null; m.uniforms.uUseVideo.value = tex ? 1 : 0; }
+  };
+  // the inside screens glow in one colour (null: the board's own graphics again)
+  grp.setInnerColor = (c) => {
+    innerMat.uniforms.uUseSolid.value = c ? 1 : 0;
+    if (c) innerMat.uniforms.uSolid.value.copy(c);
+  };
+  // the screen underneath: ONE picture all the way round (a panorama made for its long,
+  // thin shape), its join on the side facing `toward` (x, z in the board's own space)
+  grp.bellyAspect = perimeter(ba, bb, br) / BH;
+  grp.setBellyFeed = (tex, toward = null) => {
+    const u = bellyMat.uniforms;
+    u.uVideo.value = tex || null; u.uUseVideo.value = tex ? 1 : 0; u.uVRepeat.value = 1;
+    if (toward) {   // the band's u at the point facing that way becomes the picture's edge
+      const P = perimeter(ba, bb, br), n = 160, d = Math.atan2(toward.z, toward.x);
+      let best = 0, err = 9;
+      for (let i = 0; i <= n; i++) {
+        const q = pointAt(ba, bb, br, (i / n) * P);
+        const e = Math.abs(Math.atan2(Math.sin(Math.atan2(q.z, q.x) - d), Math.cos(Math.atan2(q.z, q.x) - d)));
+        if (e < err) { err = e; best = i; }
+      }
+      u.uVOff.value = -(1 - best / n);   // outward bands run u = 1 - i/n (see band)
+    }
+  };
   grp.setLevel = (k) => { level = Math.max(0, +k || 0); show(); };
   Object.defineProperty(grp, 'screensOn', { get: () => on });
 

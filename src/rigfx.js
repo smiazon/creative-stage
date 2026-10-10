@@ -1382,7 +1382,7 @@ function makeConfetti(cannons, count) {
   inst.boundingSphere = new THREE.Sphere(new THREE.Vector3(-10, 8, 0), 140);
 
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uT: { value: -999 }, uLife: { value: 40.0 }, uAtlas: { value: makeConfettiAtlas() }, uDensity: { value: 0.7 } },
+    uniforms: { uT: { value: -999 }, uLife: { value: 26.0 }, uAtlas: { value: makeConfettiAtlas() }, uDensity: { value: 0.7 } },
     side: THREE.DoubleSide,
     vertexShader: /* glsl */`
       attribute vec3 aOrigin; attribute vec3 aVel; attribute float aSeed; attribute vec3 aCol;
@@ -1405,7 +1405,7 @@ function makeConfetti(cannons, count) {
         // ~0.6 m/s, the speed real paper actually falls at
         float k = 1.0 - exp(-age * 0.55);
         vec3 p = aOrigin + aVel * k * 1.8;
-        p.y -= 0.95 * age * 0.62;
+        p.y -= 1.35 * age;   // about 1.35 m/s: a lively fall that still reads as paper (it was 0.6)
         p.x += sin(age * 1.3 + aSeed) * 0.9;
         p.z += cos(age * 1.1 + aSeed * 1.7) * 0.9;
         p.y = max(p.y, 0.02);
